@@ -159,6 +159,21 @@ var PrefAssistant = Class.create({
 			);
 
 		this.controller.setupWidget(
+			"speedUnit",
+			{
+				label: "使用的速度单位",
+				choices:[
+						{label: "公里/小时", value: "kmph"},
+						{label: "米/秒", value: "mps"}
+					]
+			},
+			{
+				value: this.larryCookie.speedUnit,
+				disable: false
+			}
+			);
+
+		this.controller.setupWidget(
 			"privateOffsetOn",
 			{
 				trueLabel: "启用",
@@ -211,6 +226,11 @@ var PrefAssistant = Class.create({
 					this.controller.get("mapTypeSelector"),
 					Mojo.Event.propertyChange,
 					this.setCookieLastViewMaptype.bind(this)
+				);
+			this.controller.listen(
+					this.controller.get("speedUnit"),
+					Mojo.Event.propertyChange,
+					this.setSpeedUnit.bind(this)
 				);
 			this.controller.listen(
 					this.controller.get("ID"),
@@ -300,6 +320,10 @@ var PrefAssistant = Class.create({
 				});
 		},
 
+	setSpeedUnit: function(evt){
+			this.larryCookie.setSpeedUnit(evt.value);
+		},
+
 	setOffsetUsage: function(evt){
 			this.larryCookie.savePrivateOffset({
 				enabled: evt.value,
@@ -346,6 +370,7 @@ var PrefAssistant = Class.create({
 		this.controller.stopListening(this.controller.get("offsetLat"),Mojo.Event.propertyChange,this.setOffsetUsage.bind(this));
 		this.controller.stopListening(this.controller.get("offsetLon"),Mojo.Event.propertyChange,this.setOffsetUsage.bind(this));
 		this.controller.stopListening(this.controller.get("baiduapiurl"),Mojo.Event.propertyChange,this.updateApiRefURL.bind(this));
+		this.controller.stopListening(this.controller.get("speedUnit"),Mojo.Event.propertyChange,this.setSpeedUnit.bind(this));
 		},
 	
 	handleCommand: function(evt){
