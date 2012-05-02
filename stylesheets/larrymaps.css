@@ -1,0 +1,363 @@
+/* Larry Maps' specific CSS */
+
+body
+{
+	padding: 0px 0px 0px 0px;
+	margin: 0px 0px 0px 0px;
+	background-color: #000;
+	color: white;
+}
+
+/* For larry maps scene */
+#larryContainer
+{
+	background:url(../images/china.png) no-repeat fixed 0px 0px;
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	width: 320px;
+	height: 372px;
+	z-index: 0;
+	opacity: .95;
+	overflow: hidden;
+}
+
+#larry
+{
+	position: fixed;
+	margin: 0px;
+	padding: 0px;
+	bottom: 48px;
+	width: 320px;
+	text-align: center;
+	color: black;
+	border-width: 8px 17px 8px 17px;
+	-webkit-border-image: url(../images/box-bg.png)  8 17 8 17 stretch stretch;
+	-webkit-box-sizing: border-box;
+	-webkit-transition: opacity 500ms linear 700ms;
+	z-index: 12;
+	font-size: 16px;
+	opacity: .9;
+	max-height: 285px;
+	overflow: scroll;
+	display: none;
+}
+
+#larrymask
+{
+	width: 320px;
+	height: 372px;
+	background: /*url(../images/mask.png) repeat*/ black;
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	z-index: 11;
+	opacity: .3;
+	-webkit-transition: opacity 800ms ease-out 500ms;
+	display: none;
+}
+
+.popup-content
+{
+	padding: 0px 0px 0px 0px;
+	overflow: scroll;
+	bottom: 0px;
+	top: 0px;
+}
+
+#buttons
+{
+}
+#bttnOK
+{display: none;}
+#bttnCustom
+{display: none;}
+#bttnCancel
+{display: none;}
+
+#map
+{
+	margin: 0px;
+	padding: 0px;
+	top: 0px;
+	left: 0px;
+	position: fixed;
+	width: 320px;
+	height: 372px;
+	-webkit-transition: -webkit-transform 0.5s ease-out;
+	-webkit-transform: scale(1);
+	border: 0px;
+}
+
+#bodytext
+{
+	font-size: 16px;
+}
+
+#topBox
+{
+	position: fixed;
+	top: 0px;
+	left: 0px;
+	right: 0px;
+	background: none;
+	z-index: 1000;
+	opacity: 1;
+	display: inline;
+	color: #99cc99;
+}
+
+#searchBar
+{
+	position: fixed;
+	float: left;
+	top: 0px;
+	left: 0px;
+	right: 70px;
+	height: 50px;
+	width: 100%;
+	color: #aaffaa;
+	display: block;
+	z-index: 1001;
+	padding-top: 4px;
+	padding-left: 1px;
+	font-size: 16px;
+	border-width: 10px 25px 10px 25px;
+	-webkit-box-sizing: border-box;
+	opacity: 0.8;
+}
+#searchBar.blur
+{
+	-webkit-border-image: url(../images/hash.png) 10 25 10 25 stretch stretch;
+	opacity: .9;
+	font-weight: bold;
+}
+#searchBar.focus{
+	-webkit-border-image: url(../images/palm-default/search-box.png) 10 25 10 25 stretch stretch;
+	opacity: .95;
+}
+#searchBar input
+{
+	background: none;
+	margin-top: 0px;
+	margin-left: -5px;
+	margin-right: -5px;
+	padding: 0px;
+	border: 0px;
+	color: #88ff88;
+	font-size: 15px;
+}
+
+#searchBarGoIcon
+{
+	position: fixed;
+	right: 10px;
+	top: 9px;
+	height: 32px;
+	width: 32px;
+	background: url(../images/palm-default/url-go-icon.png);
+	z-index: 1000;
+	opacity: .1;
+}
+#searchBarGoIcon.tapable
+{
+	opacity: .9;
+	z-index: 1002;
+}
+#searchBarGoIcon.graydown
+{
+	opacity: .1;
+	z-index: 1000;
+}
+
+
+.hint-text
+{
+	color: #aaaabb;
+	font-weight: bold;
+}
+
+#realtimeInfo
+{
+	display: block;
+	width: 80px;
+	margin: 0px;
+	padding: 0px;
+	height: 50px;
+	position: fixed;
+	float:right;
+	padding-top: 4px;
+	top: 50px;
+	right: -5px;
+	z-index: 15;
+	background: none;
+}
+#realtimeInfo .rcontent
+{
+	padding: 4px 19px 4px 4px;
+	margin: 0px;
+	font-size: 10px;
+	text-align: right;
+	color: black;
+	line-height: 11px;
+	background: url(../images/rti-bg.png) no-repeat;
+	-webkit-transition: -webkit-transform 0.2s ease-out;
+	-webkit-transform: scale(1);
+}
+
+#panel
+{
+	position: fixed;
+	left: 5px;
+	right: 5px;
+	bottom: 50px;
+	display: none;
+	max-height: 265px;
+	z-index: 13;
+	opacity: .95;
+}
+
+#panelContent
+{
+	max-height: 260px;
+	overflow: scroll;
+}
+
+#updaterSpinner
+{
+	position: absolute;
+	z-index: 8;
+	display: none;
+	opacity: .7;
+}
+
+#prefSpinner
+{
+	position: absolute;
+	z-index: 100;
+	display: none;
+}
+#prefSpinnerMask
+{
+	position: fixed;
+	top: 0px;
+	left: 0px;
+	background: black;
+	opacity: .3;
+	z-index: 99;
+	display: none;
+}
+
+.license
+{
+	padding: 10px;
+	font-size: 12px;
+}
+
+#advList
+{
+	font-size: 14px;
+	text-align: center;
+}
+
+#helpContainer
+{
+	font-size: 14px;
+}
+
+#donate
+{
+	display: block;
+	font-size: 12px;
+	color: green;
+	padding-left: 20px;
+	padding-bottom: 5px;
+}
+
+#donate.alipay
+{
+	font-size: 16px;
+}
+
+#about
+{
+	font-size: 16px;
+	text-align: center;
+}
+
+a
+{
+	color: purple;
+}
+
+#emailButton
+{
+	position: absolute;
+	top: 100px;
+	left: 100px;
+	background: url(../images/application-email.png) center center no-repeat;
+	height: 32px;
+	width: 32px;
+	z-index: 17;
+	font-size: 32px;
+	line-height: 32px;
+	text-align: center;
+	opacity: .8;
+	padding: 0px;
+	border: 0px;
+	color: green;
+	display: none;
+	-webkit-transition: -webkit-transform 0.2s ease-out;
+	-webkit-transform: scale(0.1);
+}
+  
+.scene-fade-top
+{
+	position: fixed; 
+	top: 0; 
+	z-index: 10;
+	height: 30px; 
+	width: 100%;
+	background: url(../images/palm-default/fade-top.png) top center repeat-x;
+	-webkit-palm-mouse-target: ignore;
+	opacity: .5;
+}
+.scene-fade-bottom
+{
+	position: fixed; 
+	bottom: 0; 
+	z-index: 10;
+	height: 30px; 
+	width: 100%;
+	background: url(../images/palm-default/fade-bottom.png) bottom center repeat-x;
+	-webkit-palm-mouse-target: ignore;
+	opacity: .5;
+}
+
+.palm-page-header-wrapper .icon
+{
+	width: 76px;
+	height: 75px;
+	background: url(../icon.png) center center no-repeat;
+}
+.palm-page-header-wrapper .title
+{
+	padding-left: 80px;
+	font-size: 24px;
+	padding-top: 10px;
+	padding-bottom: 0px;
+	display: inline;
+}
+.palm-page-header-wrapper .title .version
+{
+	font-size: 12px;
+	color: #888;
+	text-transform: lowercase;
+	display: inline;
+}
+.palm-page-header-wrapper .title .sub
+{
+	font-size: 14px;
+	padding-top: 0px;
+	margin-top: 0px;
+}

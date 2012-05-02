@@ -1,0 +1,19 @@
+[
+    {"source": "app/assistants/stage-assistant.js"},
+    {"source": "javascripts/filemgr-service.js"},
+    {"source": "javascripts/cookie-adapter.js"},
+    {"source": "javascripts/api-updater.js"},
+    {"source": "javascripts/gps-helper.js"},
+    {
+        "scenes": "larrymaps",
+        "source": "app/assistants/larrymaps-assistant.js"
+    },
+    {
+        "scenes": "pref",
+        "source": "app/assistants/pref-assistant.js"
+    },
+    {
+        "scenes": "help",
+        "source": "app/assistants/help-assistant.js"
+    }
+]

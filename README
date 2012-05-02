@@ -2,5 +2,11 @@ Larry maps is a WebOS application that will
 give you a chance to use map provided by 
 map.baidu.com. Larry maps is licensed under 
 GNU GPL version 2.
+Larry maps is based on Mojo framework.
+Larry maps fecthes the map & services data
+by using the open api which comes from
+BAIDU.COM, you must take a look at the 
+license of api here:
+http://dev.baidu.com/wiki/map/index.php?title=%E4%BD%BF%E7%94%A8%E6%9D%A1%E6%AC%BE
 
 See ./COPYING for detail.

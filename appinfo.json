@@ -1,0 +1,17 @@
+{
+	"id": "cn.choetin.larry.maps",
+	"version": "1.5.0",
+	"vendor": "Choetin Chen",
+	"type": "web",
+	"category": "Location and Travel",
+	"main": "index.html",
+	"title": "Larry Maps",
+	"noWindow": true,
+	"icon": "icon.png",
+	"smallicon": "images/larry_maps_32.png",
+	"theme": "light",
+	"lightweight": true,
+	"splashicon": "images/larry_maps_256.png",
+	"keywords": ["china", "maps", "ditu", "larry", "choetin", "baidu"],
+	"vendor_email": "choetin@gmail.com"
+}

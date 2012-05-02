@@ -1,0 +1,131 @@
+<div class="palm-page-header">
+	<div class="palm-page-header-wrapper">
+	<div class="icon"></div>
+	<div class="title">
+		Larry Maps 选项
+		<div class="version" id="version">v1.0.0</div>
+		<div class="sub">好好地调教Larry Maps吧...</div>
+	</div>
+	</div>
+	<div>&nbsp;</div>
+</div>
+<div id="prefContainer">
+	<div class="palm-group">
+		<div class="palm-group-title">
+		ID -(点击进行复制)
+		</div>
+		<div class="palm-list">
+			<div class="palm-row single">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div x-mojo-element="TextField" id="ID"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="palm-group">
+		<div class="palm-group-title">
+			地图类型(在下次启动地图时起作用)
+		</div>
+		<div class="palm-list">
+			<div class="palm-row single">
+				<div class="palm-row-wrapper">
+					<div x-mojo-element="ListSelector" id="mapTypeSelector"></div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="palm-group" id="newFeed">
+		<div class="palm-group-title">个人私用偏移量</div>
+		<div class="palm-list">
+			<div class="palm-row">
+				<div class="palm-row-wrapper">
+					<div class="label left">使用偏移量</div>
+					<div id="privateOffsetOn" x-mojo-element="ToggleButton"></div>
+				</div>
+			</div>
+			<div class="palm-row middle">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">lat偏移量</div>
+						<div id="offsetLat" x-mojo-element="TextField"></div>
+					</div>
+				</div>
+			</div>
+			<div class="palm-row last">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">lon偏移量</div>
+						<div id="offsetLon" x-mojo-element="TextField"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="palm-group">
+		<div class="palm-group-title">
+			地图API引用地址 [按住以修改]
+		</div>
+		<div class="palm-list">
+			<div class="palm-row first">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div x-mojo-element="TextField" id="baiduapiurl"></div>
+					</div>
+				</div>
+			</div>
+			<div class="palm-row middle">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">最后更新时间</div>
+						<div x-mojo-element="TextField" id="apiLastUpdated"></div>
+					</div>
+				</div>
+			</div>
+			<div class="palm-row middle">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">已下载的API版本</div>
+						<div x-mojo-element="TextField" id="apiVerInCookie"></div>
+					</div>
+				</div>
+			</div>
+			<div class="palm-row middle">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">api CSS状态</div>
+						<div x-mojo-element="TextField" id="apiCSS"></div>
+					</div>
+				</div>
+			</div>
+			<div class="palm-row last">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div class="label">api JS状态</div>
+						<div x-mojo-element="TextField" id="apiJS"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div class="palm-group">
+		<div class="palm-group-title">
+		个人EMail
+		</div>
+		<div class="palm-list">
+			<div class="palm-row single">
+				<div class="palm-row-wrapper textfield-group" x-mojo-focus-highlight="true">
+					<div class="title">
+						<div x-mojo-element="TextField" id="userEmail"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div x-mojo-element="Spinner" id="prefSpinner"><div>
+<div id="prefSpinnerMask">&nbsp;<div>
