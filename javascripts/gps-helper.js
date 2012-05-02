@@ -66,14 +66,14 @@ var GPS = Class.create({
 			try{
 				this.serviceHandler.cancel();
 				delete this.serviceHandler;
-				this.isGpsReady = false;
+				//this.isGpsReady = false;
 			}catch(e){
 				Mojo.Log.error("##### GPS#serviceHandler error: may cancel a non-exist service.");
 				}
 		},
 	
 	handleGpsResponse : function(event) {
-		if (!(isNaN(event.latitude) && isNaN(event.longitude))){
+		if (!(isNaN(event.latitude) || isNaN(event.longitude))){
 			this.oldLAT = this.LAT;
 			this.oldLON = this.LON;
 			// this.oldALT = this.ALT;

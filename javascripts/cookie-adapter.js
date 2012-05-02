@@ -27,7 +27,7 @@ var larryCookie = Class.create({
 			this.lastViewPoint = {"lat": 25.213604, "lon": 110.285375, "level": 16};
 			this.lastViewMapType = "MAP";
 			this.trackingUse.push(this.getDateTime());
-			this.privateOffset = {enabled: true, "lat": 0.002805, "lon": 0.011621};
+			this.privateOffset = {"enabled": true, "lat": 0.002805, "lon": 0.011621, "autoUpdate": true};
 			this.apiRefURL = "http://api.map.baidu.com/api?v=1.3";
 			this.appVersion = Mojo.appInfo.version;
 			this.speedUnit = "mps"; // 米每秒 mps； 公里每小时 kmph
@@ -52,9 +52,12 @@ var larryCookie = Class.create({
 				this.lastViewPoint = this.LarryCookieObject.lastViewPoint;
 				this.lastViewMapType = this.LarryCookieObject.lastViewMapType;
 				this.privateOffset = this.LarryCookieObject.privateOffset;
+				if(this.privateOffset.autoUpdate == undefined){
+					this.privateOffset.autoUpdate = true; // 1.5.2增
+				}
 				this.apiRefURL = this.LarryCookieObject.apiRefURL;
 				this.userEmail = this.LarryCookieObject.userEmail;
-				this.speedUnit = this.LarryCookieObject.speedUnit || "mps"; // 新增
+				this.speedUnit = this.LarryCookieObject.speedUnit || "mps"; // 1.5.1新增
 				}
 		},
 
@@ -129,9 +132,16 @@ var larryCookie = Class.create({
 		},
 
 	savePrivateOffset: function(osObj){
-			if(typeof(osObj) != "object" || ! (osObj.lat && osObj.lon))
+			if(typeof(osObj) != "object" || ! (osObj.lat != undefined && osObj.lon != undefined))
 				return;
-			this.privateOffset = osObj;
+			var tmpOffsetObject = osObj;
+			if(tmpOffsetObject.autoUpdate == undefined){
+					tmpOffsetObject.autoUpdate = this.privateOffset.autoUpdate;
+			}
+			if(tmpOffsetObject.enabled == undefined){
+				tmpOffsetObject.enabled = this.privateOffset.enabled;
+			}
+			this.privateOffset = tmpOffsetObject;
 			return this.save();
 		},
 

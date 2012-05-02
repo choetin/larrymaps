@@ -1,4 +1,6 @@
-/* by choetin AT gmail DOT com (L)2012 */
+/* by choetin AT gmail DOT com (L)2012
+ * @filename: stage-assistant.js
+ * */
 
 function AppAssistant(controller){
 		this.controller = controller;

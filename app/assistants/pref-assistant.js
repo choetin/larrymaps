@@ -106,7 +106,6 @@ var PrefAssistant = Class.create({
   		this.controller.setupWidget(
  			"offsetLat",
  			{
- 				hintText:'请输入...',
  				multiline: false,
  				autoFocus: false,
 				focus: false,
@@ -117,7 +116,7 @@ var PrefAssistant = Class.create({
 					return (Mojo.Char.isDigit(c) || c == 46); // 仅接受数字及英文句点"."
 					}
  			},
- 			{
+ 			this.oslatModel = {
  				value: this.larryCookie.privateOffset.lat,
  				disabled: false
  			});
@@ -125,7 +124,6 @@ var PrefAssistant = Class.create({
   		this.controller.setupWidget(
  			"offsetLon",
  			{
- 				hintText:'请输入...',
  				multiline: false,
  				autoFocus: false,
 				focus: false,
@@ -136,10 +134,22 @@ var PrefAssistant = Class.create({
 					return (Mojo.Char.isDigit(c) || c == 46);
 					}
  			},
- 			{
+ 			this.oslonModel = {
  				value: this.larryCookie.privateOffset.lon,
  				disabled: false
  			});
+
+		this.controller.setupWidget(
+			"autoAGcheckBox",
+			{
+				trueValue: true,
+				falseValue: false,
+			},
+			this.agBoxModel = {
+				value: this.larryCookie.privateOffset.autoUpdate,
+				disabled: (! this.larryCookie.privateOffset.enabled)
+			}
+		);
 
 		this.controller.setupWidget(
 			"mapTypeSelector",
@@ -179,7 +189,7 @@ var PrefAssistant = Class.create({
 				trueLabel: "启用",
 				falseLabel: "禁用"
 			},
-			{
+			this.prvtOSonModel = {
 				value: this.larryCookie.privateOffset.enabled
 			}
 			);
@@ -257,6 +267,18 @@ var PrefAssistant = Class.create({
 					Mojo.Event.propertyChange,
 					this.updateApiRefURL.bind(this)
 				);
+			this.controller.listen(
+					this.controller.get("autoAGcheckBox"),
+					Mojo.Event.propertyChange,
+					this.setAutoAG.bind(this)
+				);
+
+			if(this.larryCookie.privateOffset.autoUpdate){
+				this.oslatModel.disabled = true;
+				this.oslonModel.disabled = true;
+				this.controller.modelChanged(this.oslatModel);
+				this.controller.modelChanged(this.oslonModel);
+			}
 
 			$("version").update("v" + this.larryCookie.appVersion);
 			this.noNetworkMsg = {
@@ -265,6 +287,9 @@ var PrefAssistant = Class.create({
 							message: "<b>不能完成指定的操作! :-(</b><br>Larry Maps<font color='red'>无法更新</font>,<br>请<font color='green'>启用网络</font>再试.",
 							choices: [{label: "返回", value: "nothing"}]
 							};
+
+			if(this.controller.get("userEmail").mojo.getValue() != '')
+				this.controller.setInitialFocusedElement(null);
 		},
 
 	startSpinner: function(){
@@ -286,6 +311,25 @@ var PrefAssistant = Class.create({
 			this.controller.get("prefSpinner").mojo.stop();
 			this.controller.get("prefSpinner").setStyle("display: none");
 			this.controller.get("prefSpinnerMask").setStyle("display: none");
+		},
+	
+	setAutoAG: function(evt){
+			if(evt.value == true){
+				this.oslatModel.disabled = true;
+				this.oslonModel.disabled = true;
+				this.controller.modelChanged(this.oslatModel);
+				this.controller.modelChanged(this.oslonModel);
+			} else if(evt.value == false){
+				this.oslatModel.disabled = false;
+				this.oslonModel.disabled = false;
+				this.controller.modelChanged(this.oslatModel);
+				this.controller.modelChanged(this.oslonModel);
+				}
+		this.larryCookie.savePrivateOffset({
+				lat: this.controller.get("offsetLat").mojo.getValue(),
+				lon: this.controller.get("offsetLon").mojo.getValue(),
+				autoUpdate: evt.value
+			});
 		},
 
 	updateUserEmail: function(evt){
@@ -330,6 +374,13 @@ var PrefAssistant = Class.create({
 				lat: this.controller.get("offsetLat").mojo.getValue(),
 				lon: this.controller.get("offsetLon").mojo.getValue()
 				});
+			if(evt.value == false){
+				this.agBoxModel.disabled = true;
+				this.controller.modelChanged(this.agBoxModel);
+			} else {
+				this.agBoxModel.disabled = false;
+				this.controller.modelChanged(this.agBoxModel);
+			}
 		},
 
 	updatePrivateOffset: function(evt){
@@ -371,6 +422,7 @@ var PrefAssistant = Class.create({
 		this.controller.stopListening(this.controller.get("offsetLon"),Mojo.Event.propertyChange,this.setOffsetUsage.bind(this));
 		this.controller.stopListening(this.controller.get("baiduapiurl"),Mojo.Event.propertyChange,this.updateApiRefURL.bind(this));
 		this.controller.stopListening(this.controller.get("speedUnit"),Mojo.Event.propertyChange,this.setSpeedUnit.bind(this));
+		this.controller.stopListening(this.controller.get("autoAGcheckBox"),Mojo.Event.propertyChange,this.setAutoAG.bind(this));
 		},
 	
 	handleCommand: function(evt){

@@ -4,6 +4,7 @@
     {"source": "javascripts/cookie-adapter.js"},
     {"source": "javascripts/api-updater.js"},
     {"source": "javascripts/gps-helper.js"},
+    {"source": "javascripts/distance-util.js"},
     {
         "scenes": "larrymaps",
         "source": "app/assistants/larrymaps-assistant.js"
@@ -15,5 +16,9 @@
     {
         "scenes": "help",
         "source": "app/assistants/help-assistant.js"
+    },
+    {
+        "scenes": "googlestaticmap",
+        "source": "app/assistants/googlestaticmap-assistant.js"
     }
 ]

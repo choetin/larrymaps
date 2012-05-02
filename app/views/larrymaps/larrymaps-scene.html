@@ -1,15 +1,18 @@
 <div id="panel">
 	<div class="palm-group" style="background-color: #aaeeaa;">
-		<div class="palm-group-title" style="text-align: center;">结果面板</div>
+		<div class="palm-group-title" style="text-align: center;">结果面板(临时用)</div>
 		<div class="palm-list">
 			<div class="palm-row-wrapper">
-				<div class="title" id="panelContent">
-				&nbsp;
+				<div id="panelScroller"  x-mojo-element="Scroller">
+					<div class="title" id="panelContent">
+					&nbsp;
+					</div>
 				</div>
 			</div>
 		</div>
 	</div>
 </div>
+<div id="director"></div>
 <div id="larryContainer">
 	<div id="map"></div>
 	<div class="scene-fade-top"></div>
@@ -17,11 +20,36 @@
 		<div id="searchBar" class="blur" x-mojo-element="TextField" x-mojo-focus-highlight="true"></div>
 		<div id="searchBarGoIcon"></div>
 	</div>
+	<div id="quickSearchDrawerContainer">
+		<div id="fqsDrawer" x-mojo-element="Drawer">
+			<table class="palm-divider labeled">
+				<tr>
+					<td class="left"</td>
+					<td class="label">视野内快速搜索</td>
+					<td class="right"></td>
+				</tr>
+			</table>
+			<div class="quickSearchItem">餐饮</div>
+			<div class="quickSearchItem">酒店</div>
+			<div class="quickSearchItem">超市</div>
+			<div class="quickSearchItem">医院</div>
+			<div class="quickSearchItem">电影院</div> <br>
+			<div class="quickSearchItem">银行</div>
+			<div class="quickSearchItem">景点</div>
+			<div class="quickSearchItem">小区</div>
+			<div class="quickSearchItem">学校</div>
+			<div class="quickSearchItem">加油站 </div> <br>
+			<div class="quickSearchItem">公交站</div>
+			<div class="quickSearchItem">停车场</div>
+			<div class="quickSearchItem">火车票代售点</div>
+
+		</div>
+	</div>
 	<div id="realtimeInfo">
 		<div class="rcontent" id="rcontent">Fetching<br>infomation<br>...</div>
 	</div>
 	<div id="larry">
-		<div class="popup-content" x-mojo-element="Scroller" x-mojo-popup-content="">
+		<div class="popup-content">
 			<div id="content">
 			</div>
 			<hr />

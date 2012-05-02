@@ -29,6 +29,7 @@ var LarrymapsAssistant = Class.create({
 			this.inDrag = false; // 处于拖动状态
 			this.inGesture = false; // 处于绽放状态
 			this.inAdjust = false; // 处于调整偏差状态
+			this.inAdjusting = false; // 调整状态中，手指正在移动
 			this.gblDraggingEventXY = undefined; // 用于保存拖动的起始坐标的临时变量
 			this.panelShowed = false;
 			this.boxShowed = false;
@@ -36,6 +37,14 @@ var LarrymapsAssistant = Class.create({
 			// infoWindow是否会自动移到中心点
 			this.autoPanning = false;
 			this.markers = []; // 存放标志的数组
+			this.autoFixOffset = true;
+			this.inMeasuring = false; // 正在测距？
+			this.inMeasure = false; // 是否可以测距
+			this.__tmpSearchKeyword = ""; // 临时保存搜索框关键词，用于完成其它操作后恢复
+			this.gblDirectionGhost = {}; // {pointOld: point, pointNew: point, timeout: number}
+										 // timeout - 计算两点间的线与垂直线的角度（北方？）
+			this.gblDirectionGhost.TIMEOUT = 2;
+			this.gblDirectionGhost.timer = 0;
 		},
 
 	setup: function(event){
@@ -45,7 +54,7 @@ var LarrymapsAssistant = Class.create({
 			visible: true,
 			items: [
 				Mojo.Menu.editItem,
-				{label: "调整偏差", command: "do-adjustment", shortcut: "j"},
+				{label: "调整偏差量", command: "do-adjustment", shortcut: "j", disabled: false},
 				{label: "设置", command: "go-pref", shortcut: "s"},
 				{label: "帮助", command: "go-help", shortcut: "h"}
 			]
@@ -75,7 +84,7 @@ var LarrymapsAssistant = Class.create({
  		
  		this.controller.setupWidget(
 			'searchBar', {
-			hintText : "搜索/捷径...",
+			hintText : "Search/Command...",
 			modelProperty : 'value',
 			inputName : 'searchElement',
 			focus : false,
@@ -124,7 +133,7 @@ var LarrymapsAssistant = Class.create({
 		this.cmdMenuModel = {
 			items:[ 
 				{iconPath : "images/GPS-off.png" , command : 'toggleGPS'},
-				{label : "Menu", command : 'showSubmenu' }
+				{label : "Menu", command : 'showSubmenu'}
 			]};
 		this.controller.setupWidget(Mojo.Menu.commandMenu, this.cmdMenuAttr, this.cmdMenuModel);
 		
@@ -139,35 +148,18 @@ var LarrymapsAssistant = Class.create({
 					spinning: true
 				}
 			);
-	},
-	
-	activate: function(event){	
-		// 用于检查API状态
-		if(this.apiInfoCookie)
-			delete this.apiInfoCookie;
-		this.apiInfoCookie = new Mojo.Model.Cookie("apiInfoCookie");
-		this.apiInfoDATA = this.apiInfoCookie.get();
-		
-		// 使用最新设定
-		if(this.larryCookie)
-			delete this.larryCookie;
-		this.larryCookie = new larryCookie();
-		// 启动时间日志
-		// this.larryCookie.updateTrackingUse();
 
-		if (! this.networkAvailable){
-			this.checkNetwork(this);
-		} else {
-			this.prepareMapAPI(this);
-		}
-		if(this.mapReady)
-			this.updateTopRightBox();
+		this.controller.setupWidget(
+			"panelScroller",
+			{mode: 'free'},
+			{}
+			);
 		Mojo.Event.listen(this.controller.document, "keyup", this.handleDocumentKeyUp.bind(this));
 
 		this.controller.listen(
 			this.controller.get("rcontent"),
 			Mojo.Event.tap,
-			this.handleRcontentTap.bind(this)
+			this.handleBcontentTap.bind(this)
 			);
 
 		this.controller.listen(
@@ -181,7 +173,56 @@ var LarrymapsAssistant = Class.create({
 			Mojo.Event.hold,
 			this.forceHideSpinner.bindAsEventListener(this)
 		);
+
+		this.controller.setupWidget(
+			"fqsDrawer",
+			{
+				modelPropert: "closed",
+				drawerBottomOffset: 35,
+				unstyled: true
+			},
+			this.fqsDrawerModel = {
+				open: false
+			}
+		);
+
+		// this.controller.document.getElementsByTagName("body")[0].addClassName("palm-dark");
 		
+		this.controller.listen(
+			this.controller.sceneElement,
+			Mojo.Event.tap,
+			this.quickSearchInBounds.bind(this)
+		);
+	},
+	
+	activate: function(event){	
+		// 用于检查API状态
+		if(this.apiInfoCookie)
+			delete this.apiInfoCookie;
+		this.apiInfoCookie = new Mojo.Model.Cookie("apiInfoCookie");
+		this.apiInfoDATA = this.apiInfoCookie.get();
+		
+		// 使用最新设定
+		if(this.larryCookie)
+			delete this.larryCookie;
+		this.larryCookie = new larryCookie();
+		this.autoFixOffset = this.larryCookie.privateOffset.autoUpdate;
+		// 是否可以修改偏移量
+		if(this.menuModel.items[1].disabled != this.autoFixOffset){
+			this.menuModel.items[1].disabled = this.autoFixOffset;
+		}
+		// 启动时间日志
+		// this.larryCookie.updateTrackingUse();
+
+		if (! this.networkAvailable){
+			this.checkNetwork(this);
+		} else {
+			this.prepareMapAPI(this);
+		}
+		if(this.mapReady)
+			this.updateBottomLine();
+		if(! this.updateAGTimer)
+			this.updateAGTimer = setInterval(this.dealAutoFixOffsets, 60 * 1000);	// 1分钟自动更新一次偏移量
 	},
 
 	listenGestureEvents: function(){
@@ -264,11 +305,12 @@ var LarrymapsAssistant = Class.create({
 			this.controller.stopListening(this.controller.get("map"), Mojo.Event.tap, this.handleMapTap.bind(this));
 			this.controller.stopListening(this.controller.get("searchBar"), Mojo.Event.propertyChange, this.handleSearchBarPropertyChange.bind(this));
 			this.controller.stopListening(this.controller.document, "keyup", this.handleDocumentKeyUp.bind(this));
-			this.controller.stopListening(this.controller.get("rcontent"),Mojo.Event.tap,this.handleRcontentTap.bind(this))
+			this.controller.stopListening(this.controller.get("rcontent"), Mojo.Event.tap, this.handleBcontentTap.bind(this))
 
 			this.controller.stopListening(this.controller.get("searchBarGoIcon"), Mojo.Event.tap, this.startToSearch.bind(this));
 			this.controller.stopListening(this.controller.get("map"), Mojo.Event.hold, this.handleMapHold.bind(this));
 			this.removeInsideEleEvtObsering();
+			this.controller.stopListening(this.controller.sceneElement, Mojo.Event.tap, this.quickSearchInBounds.bind(this));
 		},
 
 	captureInsideEleEvt: function(){
@@ -303,14 +345,20 @@ var LarrymapsAssistant = Class.create({
 			this.controller.document.body.height = ME.h;
 			this.controller.document.body.width = ME.w;
 			g("larryContainer").style.height = ME.h + "px";
-			g("larryContainer").style.width = ME.w + "px"
-			g("map").style.height =  (2 * ME.h) + "px";
-			g("map").style.width = (2 * ME.w) + "px";
-			g("map").style.top =  (0 - (ME.h/2)) + "px";
-			g("map").style.left = (0 - (ME.w/2)) + "px";
+			g("larryContainer").style.width = ME.w + "px";
+			//g("map").style.height =  (2 * ME.h) + "px";
+			//g("map").style.width = (2 * ME.w) + "px";
+			g("map").style.height =  ME.h + "px";
+			g("map").style.width = ME.w + "px";
+			//g("map").style.top =  (0 - (ME.h / 2)) + "px";
+			//g("map").style.left = (0 - (ME.w / 2)) + "px";
+			g("map").style.top =  "0px";
+			g("map").style.left = "0px";
 			g("larry").style.maxHeight = (ME.h - 124) + "px";
 			var styleSpinnerMask = "height:" + ME.h + "px;width:" + ME.w + "px;";
 			g("larrymask").setStyle(styleSpinnerMask);
+			g("director").style.top = ((ME.h - 46) / 2) + "px";
+			g("director").style.left = ((ME.w - 46) / 2) + "px";
 		},
 
 	setupSearchStuff: function(){
@@ -335,7 +383,7 @@ var LarrymapsAssistant = Class.create({
 							ME.mapLon = parseFloat(poi.point.lon).toFixed(6);
 						}
 					ME.mapZoomLevel = ME.map.getZoom();
-					ME.updateTopRightBox();
+					ME.updateBottomLine();
 					ME.mapInfoWindow = ME.map.getInfoWindow();
 					ME.autoPanning = true;
 					if(ME.mapInfoWindow){
@@ -373,7 +421,7 @@ var LarrymapsAssistant = Class.create({
 					selectFirstResult: true,
 					panel: "panelContent"
 				},
-				pageCapacity: 5,
+				pageCapacity: 4,
 				onSearchComplete: ff,
 				onInfoHtmlSet: refreshOurCuteVar
 			});
@@ -392,7 +440,7 @@ var LarrymapsAssistant = Class.create({
 						selectFirstResult: true,
 						panel: "panelContent"
 					},
-				pageCapacity: 6,
+				pageCapacity: 5,
 				onSearchComplete: f,
 				onInfoHtmlSet: refreshOurCuteVar
 				});
@@ -407,7 +455,12 @@ var LarrymapsAssistant = Class.create({
 		/////////////////////////////////////////////////////////
 		},
 
-	startToSearch: function(){
+	startToSearch: function(keywordStuff){	// locStuff:
+										// {
+										//		type: 'localsearch' | 'transitroute',
+										//		bound: 'viewport' | 'nearby',
+										//		forceLocal: boolean
+										// }
 		// TODO: 打算做一个全能的搜索框
 		try{
 		if(! ME.mapReady){
@@ -416,6 +469,9 @@ var LarrymapsAssistant = Class.create({
 				return;
 			}
 		ME.blurSearchBar();
+
+		if(ME.inMeasure){
+		}
 		var keyword = ME.controller.get("searchBar").mojo.getValue();
 		keyword = keyword.trim();
 		ERROR("@@@@@ keyword: [" + keyword + "]");
@@ -453,9 +509,21 @@ var LarrymapsAssistant = Class.create({
 			}
 		},
 
+	quickSearchInBounds: function(evt){
+			if(evt.target && evt.target.className == "quickSearchItem"){
+				var bounds = new BMap.Bounds(
+						ME.map.pixelToPoint(new BMap.Pixel(0, ME.h)),
+						ME.map.pixelToPoint(new BMap.Pixel(ME.w, 0))
+					);
+				ME.startSpinner();
+				ME.stopTracking('silent');
+				ME.localSearch.searchInBounds(evt.target.innerHTML.trim(), bounds);
+			}
+		},
+
 	fixInfoWindow: function(){
 			try{
-			if(ME.controller.window.document.getElementsByClassName("BMap_pop")[0] && ME.controller.window.document.getElementsByClassName("BMap_pop")[0].style.visibility != "hidden"){
+			var fixIt = function(){
 					ME.controller.window.document.getElementsByClassName("BMap_top")[0].style.borderTop = "1px solid #ABABAB";
 					ME.controller.window.document.getElementsByClassName("BMap_top")[0].style.backgroundColor = "#FFFFFF";
 					ME.controller.window.document.getElementsByClassName("BMap_center")[0].style.backgroundColor = "#FFFFFF";
@@ -463,7 +531,15 @@ var LarrymapsAssistant = Class.create({
 					ME.controller.window.document.getElementsByClassName("BMap_center")[0].style.borderRight = "1px solid #ABABAB";
 					ME.controller.window.document.getElementsByClassName("BMap_bottom")[0].style.backgroundColor = "#FFFFFF";
 					ME.controller.window.document.getElementsByClassName("BMap_bottom")[0].style.borderBottom = "1px solid #ABABAB";
-				}
+				};
+			var checkIt = function(){
+					if(ME.controller.window.document.getElementsByClassName("BMap_pop")[0] && ME.controller.window.document.getElementsByClassName("BMap_pop")[0].style.visibility != "hidden"){
+							fixIt();
+							clearInterval(checkItTimer);
+							checkItTimer = undefined;
+						}
+				};
+			var checkItTimer = setInterval(checkIt, 50);
 			}catch(e){
 					ERROR("@@@@@ larrymaps#fixInfoWindow got ERRORs: " + e);
 				}
@@ -590,7 +666,7 @@ var LarrymapsAssistant = Class.create({
 				ME.larryCookie = new larryCookie();
 			var h = parseInt(ME.larryCookie.devInfo.winHeight);
 			var w = parseInt(ME.larryCookie.devInfo.winWidth);
-			var styleSpinner = "display:block;top:" + ((h - 128) / 2) + "px;left:" + ((w - 128) / 2) + "px;";
+			var styleSpinner = "display:block;top:" + ((h - 280) / 2) + "px;left:" + ((w - 128) / 2) + "px;";
 			ME.controller.get("updaterSpinner").mojo.start();
 			ME.controller.get("updaterSpinner").setStyle(styleSpinner);
 			ME.showMask();
@@ -626,52 +702,53 @@ var LarrymapsAssistant = Class.create({
 			// 在里关联，时间还算合适吧?
 			ME.addRedirectHandler();
 			T.apiInfoCookie.put({"jsReady": "false", "cssReady": "false", "apiReady": "false", "version": "null", "lastUpdated": "从未下载"});
-			Mojo.Controller.stageController.activeScene().showAlertDialog({
-				onChoose: function(val){
-					if(val == "download"){
-						var DL = new APIUpdater();
-						T.startSpinner();
-						if(T.chkApiTimer){
-								clearInterval(T.chkApiTimer);
-								T.chkApiTimer = undefined;
-							}
-						// 这个定时器用于更新与API相关的提示内容
-						T.chkApiTimer = setInterval(function(){
-							ME.updateTopRightBox("正在<br>下载API<br>...");
-							api = (new Mojo.Model.Cookie("apiInfoCookie")).get();
-							if(api){
-								if(api.cssReady == true){
-									ME.showBox("Map API css 已就绪...", "正在继续..." + ME.getDateTime());
-									}
-								if(api.jsReady == true){
-									ME.showBox("Map API js 已就绪...", "正在继续..." + ME.getDateTime());
-									}
-								if(api.apiReady == true){
-										if(! ME.apiLoaded)
-											ME.loadAPI(ME);
-										delete DL;
-										ME.stopSpinner();
-										ME.showBox("API文件已经全部下载完毕!", "正在继续..." + ME.getDateTime());
-										var f = function(){
-											ME.showBox("正在加载API!", "等待中..." + ME.getDateTime());
-											if(typeof(BMap) != undefined){
-													ME.closeBox();
-													if(! ME.mapReady)
-														ME.createMapNode(ME);
-													clearInterval(ME.confirmApiLoadedTimer);
-													ME.confirmApiLoadedTimer = undefined;
-												}
-											}
-										ME.confirmApiLoadedTimer = setInterval(f, 1500);
-										clearInterval(ME.chkApiTimer);
-										ME.chkApiTimer = undefined;
-								}
-							}
-						}, 1000);
-					}else{
-						T.showBox("还没准备API,正等待你的操作...", "你刚才没有选择开始");
+			var fff = function(val){
+				if(val == "download"){
+					var DL = new APIUpdater();
+					T.startSpinner();
+					if(T.chkApiTimer){
+							clearInterval(T.chkApiTimer);
+							T.chkApiTimer = undefined;
 						}
-					},
+					// 这个定时器用于更新与API相关的提示内容
+					T.chkApiTimer = setInterval(function(){
+						ME.updateBottomLine("正在<br>下载API<br>...");
+						api = (new Mojo.Model.Cookie("apiInfoCookie")).get();
+						if(api){
+							if(api.cssReady == true){
+								ME.showBox("Map API css 已就绪<br>若长时间停留于此,<br>几乎都是因为不同的网络条件造成,<br>请重启此程序...", "正在继续..." + ME.getDateTime());
+								}
+							if(api.jsReady == true){
+								ME.showBox("Map API js 已就绪...", "正在继续..." + ME.getDateTime());
+								}
+							if(api.apiReady == true){
+									if(! ME.apiLoaded)
+										ME.loadAPI(ME);
+									delete DL;
+									ME.stopSpinner();
+									ME.showBox("API文件已经全部下载完毕!", "正在继续..." + ME.getDateTime());
+									var f = function(){
+										ME.showBox("正在加载API!<br>若长时间停留于此,<br>请到'设置'页面的程序程序更新API.", "等待中..." + ME.getDateTime());
+										if(typeof(BMap) != undefined){
+												ME.closeBox();
+												if(! ME.mapReady)
+													ME.createMapNode(ME);
+												clearInterval(ME.confirmApiLoadedTimer);
+												ME.confirmApiLoadedTimer = undefined;
+											}
+										}
+									ME.confirmApiLoadedTimer = setInterval(f, 1500);
+									clearInterval(ME.chkApiTimer);
+									ME.chkApiTimer = undefined;
+							}
+						}
+					}, 1000);
+				}else{
+					T.showBox("还没准备API,正等待你的操作...", "你刚才没有选择开始");
+					}
+				};
+			Mojo.Controller.stageController.activeScene().showAlertDialog({
+				onChoose: fff,
 				preventCancel: false,
 				allowHTMLMessage: true,
 				title: "Larry Maps需要更新API",
@@ -690,7 +767,7 @@ var LarrymapsAssistant = Class.create({
 		// 抓取搜索框内的文本输入框事件
 		ME.captureInsideEleEvt();
 
-		T.updateTopRightBox("正在等待<br>网络连接<br>...");
+		T.updateBottomLine("正在等待<br>网络连接<br>...");
 		// closeBox默认是1300毫秒关闭的
 		setTimeout(T.startSpinner, 1400);
 		var R = T.controller.serviceRequest(
@@ -723,7 +800,7 @@ var LarrymapsAssistant = Class.create({
 				bttnText = bttnTxt;
 			var content = msg;
 			var g = ME.controller.get;
-			g("larry").setStyle("display: block; opacity: 0.5;");
+			g("larry").setStyle("display: block; opacity: 0.8;");
 			ME.showMask();
 			g("content").innerHTML = content;
 			g("plnTxt").innerHTML = bttnText;
@@ -777,6 +854,11 @@ var LarrymapsAssistant = Class.create({
 			// 让心急的用户镇定一点，来个转圈
 			// 加载地图是需要一点时间的，这点时间内，地图是空白的（像白屏那样）
 			T.startSpinner();
+			if(typeof(BMap) == undefined){
+					setTimeout(function(){T.createMapNode;}, 3000);
+					T.showBox("似乎API未被部署,<br>如果真是如此,我想你可以到设置页面，在程序菜单中更新一下API.<br>如果更新成功也也不能使用,我想必定是万恶的API提供者在搞鬼.", "告急!!!");
+				}
+			T.closeBox(1500);
 			var fadeInI = 0;
 			T.controller.get("map").style.opacity = 0;
 			T.controller.get("map").style.display = "block";
@@ -816,8 +898,7 @@ var LarrymapsAssistant = Class.create({
 					ME.controller.get("rcontent").setStyle("color: purple");
 					break;
 				}
-			if(typeof(BMap) != undefined)
-				T.map = new BMap.Map("map", {enableHighResolution: true});
+			T.map = new BMap.Map("map", {enableHighResolution: true});
 			if(mapType == BMAP_PERSPECTIVE_MAP){
 					// 透视地图，暂时不设定地图类型。
 					// 设定地图类型，就在设定城市之后进行。
@@ -840,7 +921,7 @@ var LarrymapsAssistant = Class.create({
 			if(T.updateMapPoint()){
 					var point;
 					if(ME._LaunchedWithParams){ // 是带参数启动的
-						point = ME.calcPoint(ME._LaunchedWithParams._lat, ME._LaunchedWithParams._lon, ME._LaunchedWithParams._oslat, ME._LaunchedWithParams._oslon);
+						point = ME.calcPoint(ME._LaunchedWithParams._lat, ME._LaunchedWithParams._lon, ME._LaunchedWithParams._oslat, ME._LaunchedWithParams._oslon, ME._LaunchedWithParams._offsetON);
 					}else{ // 不带参数启动
 						if(! ME.larryCookie)
 							ME.larryCookie = new larryCookie();
@@ -863,16 +944,20 @@ var LarrymapsAssistant = Class.create({
 							}
 					// 无论哪种地图类型，我们都把参数的坐标标记到地图上
 					if(ME.params && ME.params.target){
-						ME.placeGpsMarker(point, {'url': 'images/markers.png',
-												'width': 23, 'height': 25,
-												'ox': 10, 'oy': 25
-												});
+						ME.placeMarker({point: point, 
+										index: 3,
+										img: {
+												url: "images/tine.png",
+												size: {width: 25, height: 32},
+												anchor: {width: 4, height: 32}
+											}
+										});
 						}
 				}else{
 					// 什么都不定义，显示到一个特定的位置 
 					T.map.centerAndZoom(new BMap.Point(110.285375, 25.213604), 5);
 				}
-			ME.updateTopRightBox();
+			ME.updateBottomLine();
 			// 地图已经就绪
 			T.mapReady = true;
 			Mojo.Event.listen(
@@ -894,7 +979,7 @@ var LarrymapsAssistant = Class.create({
 			T.controller.listen(
 				T.controller.get("rcontent"),
 				Mojo.Event.hold,
-				T.handleRcontentHold.bind(T)
+				T.handleBcontentHold.bind(T)
 				);
 	
 			T.blurSearchBar();
@@ -906,6 +991,14 @@ var LarrymapsAssistant = Class.create({
 						},
 					2000
 				);
+		var f = function(v){
+				if(v != 0.00)
+					ME.controller.get("searchBar").mojo.setValue("路线长度: " + v + " 米");
+				else
+					ME.controller.get("searchBar").mojo.setValue("请点击地图开始测距(后退手势退出)!");
+			};
+		if(! ME.__distUtil)
+			ME.__distUtil = new distanceUtil(ME.map, f);
 			return true;
 		},
 
@@ -934,7 +1027,7 @@ var LarrymapsAssistant = Class.create({
 							var tmpVar = ME.params.target;
 							var statOK = true;
 							tmpVar = tmpVar.toLowerCase();
-							//if(/^larrymaps\/\//.test(tmpVar){
+							//if(/^larrymaps:\/\//.test(tmpVar){
 							if(tmpVar.indexOf("larrymaps://") == 0 && tmpVar.indexOf("lat=") && tmpVar.indexOf("lon=") && tmpVar.indexOf("z=") && tmpVar.indexOf("&")){
 									tmpVar = tmpVar.replace("larrymaps://", "");
 									tmpVar = tmpVar.split("&");
@@ -943,14 +1036,16 @@ var LarrymapsAssistant = Class.create({
 												{var _lat = parseFloat(tmpVar[i].split("=")[1]);}
 											if(tmpVar[i].indexOf("lon") == 0)
 												{var _lon = parseFloat(tmpVar[i].split("=")[1]);}
-											if(tmpVar[i].indexOf("z") ==0)
+											if(tmpVar[i].indexOf("z") == 0)
 												{var _level = parseInt(tmpVar[i].split("=")[1]);}
-											if(tmpVar[i].indexOf("t") ==0)
+											if(tmpVar[i].indexOf("t") == 0)
 												{var _type = tmpVar[i].split("=")[1];}
-											if(tmpVar[i].indexOf("oslat") ==0)
+											if(tmpVar[i].indexOf("oslat") == 0)
 												{var _oslat = parseFloat(tmpVar[i].split("=")[1]);}
-											if(tmpVar[i].indexOf("oslon") ==0)
+											if(tmpVar[i].indexOf("oslon") == 0)
 												{var _oslon = parseFloat(tmpVar[i].split("=")[1]);}
+											if(tmpVar[i].indexOf("offseton") == 0)
+												{var _offsetON = tmpVar[i].split("=")[1];}
 										}
 							}
 							// 只有提供lat,lon,zoomlevel时，才打开参数的位置
@@ -961,7 +1056,7 @@ var LarrymapsAssistant = Class.create({
 									ME.mapZoomLevel = _level;
 									ME.gblMapType = _type ? _type.toUpperCase() : ME.gblMapType;
 									// 此对象告诉mapGoto()及createMapNode()，我们是被其它程序带参数启动的,使用参数的偏移量
-									ME._LaunchedWithParams = {"_lat": _lat, "_lon": _lon, "_oslat": _oslat, "_oslon": _oslon, "_level": _level};
+									ME._LaunchedWithParams = {"_lat": _lat, "_lon": _lon, "_oslat": _oslat, "_oslon": _oslon, "_level": _level, '_offsetON': _offsetON};
 									// 如果有偏移量提供，提示用户是否保存所提供的偏移量
 									if(_oslat && _oslon && (parseFloat(_oslat) != ME.larryCookie.privateOffset.lat || parseFloat(_oslon) != ME.larryCookie.privateOffset.lon)){
 											var offset = {"oslat": _oslat,"oslon": _oslon};
@@ -1004,11 +1099,21 @@ var LarrymapsAssistant = Class.create({
 		},
 		
 	handleMapTap: function(evt){
-			var point = ME.map.pixelToPoint(new BMap.Pixel(evt.x + (ME.w/2), evt.y + (ME.h/2)));
-			ME.markers[0] = ME.placeMarker({'point': point, 'index': 0});
+			//var point = ME.map.pixelToPoint(new BMap.Pixel(evt.down.x + (ME.w/2), evt.down.y + (ME.h/2)));
 			if(! ME.searchBarFocused){
-				if(ME.inDrag || ME.inGesture)
+				if(ME.inDrag || ME.inGesture){
 					return;
+				}else{
+					if(ME.inMeasure){
+						if(! ME.inMeasuring){
+							ME.inMeasuring = true;
+						}
+						ME.__distUtil.addPoint(ME.map.pixelToPoint(new BMap.Pixel(evt.down.x, evt.down.y)));
+						return;
+					}
+				// test the direction controller:
+				// ME.updateDirection(ME.map.getCenter(), ME.map.pixelToPoint(new BMap.Pixel(evt.down.x, evt.down.y)));
+				}
 			}else{
 					ME.blurSearchBar();
 				}
@@ -1016,7 +1121,7 @@ var LarrymapsAssistant = Class.create({
 	
 	handleMapHold: function(evt){
 			if(! ME.searchBarFocused){
-				if(ME.inDrag || ME.inGesture)
+				if(ME.inDrag || ME.inGesture || ME.inMeasure)
 					return;
 				ME.showEmailButton({'x': evt.down.x, 'y': evt.down.y});
 			}else{
@@ -1038,8 +1143,16 @@ var LarrymapsAssistant = Class.create({
 				ME.larryCookie = new larryCookie();
 			var v = evt.value;
 			// 定义一些快捷方式 - Most likely "Just type".
-			if(v == "Go" || v == "go")
+			if(v.indexOf(".") == 0 || v.indexOf("Go ") == 0){
+				ME.controller.get("searchBarGoIcon").removeClassName("search");
+				ME.controller.get("searchBarGoIcon").addClassName("command");	
+			} else {
+				ME.controller.get("searchBarGoIcon").removeClassName("command");
+				ME.controller.get("searchBarGoIcon").addClassName("search");
+			}
+			if(v == "Go " || v == "go "){
 				ME.controller.get("searchBar").mojo.setText("Go ");
+			}
 			if(v == "Go 0")
 				ME.controller.get("searchBar").mojo.setText("Go 0,0,");
 			if(v.indexOf("Go ") ==  0 && v.indexOf(",") > 3){
@@ -1049,8 +1162,20 @@ var LarrymapsAssistant = Class.create({
 					_lat = v[0] ? parseFloat(v[0]) : undefined;
 					_lon = v[1] ? parseFloat(v[1]) : undefined;
 					_z = v[2] ? parseInt(v[2]) : undefined;
-					if(_lat && _lon && _z){
+					if(_lat && _lon){
 						ME.stopTracking();
+						var point = new BMap.Point(
+							_lon + parseFloat(ME.larryCookie.privateOffset.lon), 
+							_lat + parseFloat(ME.larryCookie.privateOffset.lat)
+							);
+						ME.markers[4] = ME.placeMarker({point: point, 
+								index: 4,
+								img: {
+									url: "images/tine.png",
+									size: {width: 25, height: 32},
+									anchor: {width: 4, height: 32}
+								}
+							});
 					}
 					ME.mapGoto({'lat': _lat, 'lon': _lon, 'zoom': _z});
 					return;
@@ -1082,13 +1207,28 @@ var LarrymapsAssistant = Class.create({
 						return;
 					}
 				}
+			if(v == ".refreshOffsets"){
+					this.autoUpdateBaiduMapGeoOffsets({from: 0, to: 4, lat: this.mapLat, lon: this.mapLon});
+					return;
+				}
+			if(v.indexOf(".setDirectionTimeout") == 0){
+				if(v.split(" ")[1] && v.split(" ")[1].match(/\d+/)){
+					ME.gblDirectionGhost.TIMEOUT = parseInt(v.split(" ")[1]);
+					ME.gblDirectionGhost.timer = 0;
+				}
+			}
 		},
 
-	calcPoint: function(lat, lon, oslat, oslon){
-			if(!(lat && lon && oslat && oslon))
+	calcPoint: function(lat, lon, oslat, oslon, offsetON){
+			if(!(lat && lon))
 				return null;
-			var _lat = (parseFloat(lat) + parseFloat(oslat)).toFixed(6);
-			var _lon = (parseFloat(lon) + parseFloat(oslon)).toFixed(6);
+			if((! offsetON || offsetON == "true") && oslat != undefined && oslon != undefined){
+				var _lat = (parseFloat(lat) + parseFloat(oslat)).toFixed(6);
+				var _lon = (parseFloat(lon) + parseFloat(oslon)).toFixed(6);
+			} else {
+					var _lat = lat;
+					var _lon = lon;
+				}
 			return (new BMap.Point(_lon, _lat));
 		},
 
@@ -1141,16 +1281,19 @@ var LarrymapsAssistant = Class.create({
 								ME.mapLat = (parseFloat(obj.lat) - parseFloat(ME.larryCookie.privateOffset.lat)).toFixed(6);
 								ME.mapLon = (parseFloat(obj.lon) - parseFloat(ME.larryCookie.privateOffset.lon)).toFixed(6);
 								}else{
-									ME.mapLat = obj.lat;
-									ME.mapLon = obj.lon;
+									ME.mapLat = parseFloat(obj.lat).toFixed(6);
+									ME.mapLon = parseFloat(obj.lon).toFixed(6);
 									}
 						}
 				}else{ // 不是改变坐标的
 						point = ME.map.getCenter();
 					}
 				if(point){
-						// 移动地图
-						ME.map.panTo(point);
+						// 移动地图, 如果处于调整偏差状态，禁用动画
+						var panOpt = {};
+						if(ME.inAdjust)
+							panOpt.noAnimation = true;
+						ME.map.panTo(point, panOpt);
 						// 我们是否处于GPS定位，是则放一个标志在地图上
 						if(ME.trackMeTimer && obj.fromAction == "gps"){
 								ME.placeGpsMarker(point);
@@ -1190,13 +1333,13 @@ var LarrymapsAssistant = Class.create({
 				}
 			var zoom = obj.zoom || ME.mapZoomLevel;
 			if(ME.larryCookie.speedUnit == "kmph"){
-				var speed = parseInt(ME.speed * 3.6) + "km/h";
+				var speed = (ME.speed * 3.6).toFixed(1) + "km/h";
 			}else{ // 其它情况用m/s, COOKIE值应为 'mps'
-					var speed = parseFloat(ME.speed).toFixed(1) + "m/s";
+					var speed = parseFloat(ME.speed).toFixed(2) + "m/s";
 				}
 
 			// 更新左上角的信息盒，更新COOKIE内的坐标信息
-			ME.updateTopRightBox(parseFloat(ME.mapLat).toFixed(6) + "<br>" + parseFloat(ME.mapLon).toFixed(6) + "<br>" + parseInt(zoom) + "z/ " + speed);
+			ME.updateBottomLine(parseFloat(ME.mapLat).toFixed(6) + "<br>" + parseFloat(ME.mapLon).toFixed(6) + "<br>[" + parseInt(zoom) + "] " + speed);
 			ME.larryCookie.updateLastViewPoint({"lat": ME.mapLat, "lon": ME.mapLon, "level": zoom});
 			delete ME.larryCookie;
 			}catch(e){
@@ -1222,6 +1365,16 @@ var LarrymapsAssistant = Class.create({
 					var fP = new BMap.Point(rtnValue.old.lon, rtnValue.old.lat);
 					var sP = new BMap.Point(rtnValue.gps.lon, rtnValue.gps.lat);
 					var tSpeed = ME.map.getDistance(fP, sP);
+					if(ME.gblDirectionGhost.timer == 0){
+						ME.gblDirectionGhost.pointOld = fP;
+						ME.gblDirectionGhost.timer ++;
+					} else if(ME.gblDirectionGhost.timer == ME.gblDirectionGhost.TIMEOUT){
+						ME.gblDirectionGhost.pointNew = sP;
+						ME.updateDirection(ME.gblDirectionGhost.pointOld, ME.gblDirectionGhost.pointNew);
+						ME.gblDirectionGhost.timer = 0;
+					} else {
+						ME.gblDirectionGhost.timer ++;
+					}
 					if(typeof(tSpeed) != "number")
 						tSpeed = 0.0;
 					ME.speed = tSpeed.toFixed(1);
@@ -1229,22 +1382,31 @@ var LarrymapsAssistant = Class.create({
 							// 这个速度很吓人,但GPS返回的数据就是会导致这种情况发生
 							ME.speed = 0.0;
 						}
-					ME.mapGoto({'lat': rtnValue.gps.lat, 'lon': rtnValue.gps.lon, 'fromAction': 'gps'});
+					// GPS返回有效数值，按钮变绿色
+					ME.cmdMenuModel.items[0].iconPath = "images/GPS-on.png";
+					ME.controller.modelChanged(ME.cmdMenuModel);
+					if(ME.inAdjusting == false)
+						ME.mapGoto({'lat': rtnValue.gps.lat, 'lon': rtnValue.gps.lon, 'fromAction': 'gps'});
+					// 定位成功后，GPS有状态改变的话，需要显示，所以再次启用提示
+					if(! ME.showGpsErrTips){
+							ME.showGpsErrTips = true;
+							if(ME.controller.get("content").innerHTML.match("初始化GPS")){
+									ME.closeBox(500);
+								}
+						}
 					delete fP;
 					delete sP;
 				}else if(ME.showGpsErrTips){
-					if(ME.gpsTipTimeout){
-							clearTimeout(ME.gpsTipTimeout);
-							ME.gpsTipTimeout = undefined;
-						}
-						if(rtnValue.gps.errorText == ""){
-							var f = function(){
-								ME.closeBox(1500);
-								};
-							ME.gpsTipTimeout = setTimeout(f, 2000);
-							ME.showBox("正在初始化GPS,<br>如果是开机后初次使用GPS,<br>可能需要几分钟...<br>GPS定位需要在室外使用...", timeS);
+						// 我们只提示一次，时长5秒
+						ME.showGpsErrTips = false;
+						if(rtnValue.gps.errorText == ""){;
+							ME.showBox("正在初始化GPS,<br>如果是开机后初次使用GPS,<br>可能需要几分钟!!!<br>[GPS定位需要在室外使用]", "按钮变为<font color='green'>绿色</font>时定位成功");
+							ME.closeBox(5000);
 						}else{
-								ME.showBox("GPS初始化状态:<br>"+rtnValue.gps.errorText, timeS);
+								// GPS错误，包括禁止程序使用GPS等情况
+								ME.cmdMenuModel.items[0].iconPath = "images/GPS-error.png";
+								ME.controller.modelChanged(ME.cmdMenuModel);
+								ME.showBox("使用GPS出错:<br>"+rtnValue.gps.errorText, timeS);
 							}
 					}
 		},
@@ -1297,7 +1459,7 @@ var LarrymapsAssistant = Class.create({
 							}
 												);
 					ME.gpsMarker.openInfoWindow(ME._gpsInfoWin);
-					setTimeout(ME.fixInfoWindow, 2000);
+					ME.fixInfoWindow();
 					ME.stopSpinner();
 				};
 			var ow = function(){
@@ -1328,8 +1490,6 @@ var LarrymapsAssistant = Class.create({
 									// return: An instance of BMap.Marker
 			if(! param)
 				return null;
-			if(! (param.point instanceof BMap.Point))
-				return null;
 			if(ME.markers[param.index]){
 					ME.map.removeOverlay(ME.markers[param.index]);
 					ME.markers[param.index] = undefined;
@@ -1339,11 +1499,13 @@ var LarrymapsAssistant = Class.create({
 														// BMap.Point(param.lat_lon.lon, param.lat_lon.lat)
 			if(! poi)
 				return null;
-			if(param.img && param.img.size)
+			if(param.img && param.img.size){
 				var iconSize = new BMap.Size(param.img.size.width, param.img.size.height);
-			else
-				var iconSize = new BMap.Size(24, 24); // param.img.size.width, param.img.size.height
-			
+				var infoWinAnchor = new BMap.Size(param.img.size.width/2, 0);
+			}else{
+					var iconSize = new BMap.Size(24, 24); // param.img.size.width, param.img.size.height
+				}
+
 			if(param.img && param.img.anchor)
 				var iconAnchor = new BMap.Size(param.img.anchor.width, param.img.anchor.height);
 			else
@@ -1358,7 +1520,8 @@ var LarrymapsAssistant = Class.create({
 					url,
 					iconSize,
 					{
-						anchor: iconAnchor
+						anchor: iconAnchor,
+						infoWindowAnchor: infoWinAnchor
 					}
 				);
 			ME.markers[param.index] = new BMap.Marker(
@@ -1368,6 +1531,36 @@ var LarrymapsAssistant = Class.create({
 					}
 				);
 			ME.map.addOverlay(this.markers[param.index]);
+			var callback = function(v){
+					var cookie = new larryCookie();
+					var addr = v.addressComponents.province + v.addressComponents.city + v.addressComponents.district + v.addressComponents.street + v.addressComponents.streetNumber;
+					var markerInfoWin = new BMap.InfoWindow(
+							"<div style='font-size:14px;color:purple;'>纬度lat: "+ ME.mapLat+ 
+							"<br>经度lon: " + ME.mapLon + 
+							"<br>偏移量(lat/lon):" + cookie.privateOffset.lat + "/" + cookie.privateOffset.lon +
+							"<br><font color='green'>地址: " + addr + "</font><div>", 
+							{
+								title: "<font style='font-size:16px;'>GPS坐标信息</font>",
+								width: 120, 
+								height: 0
+							}
+												);
+					ME.markers[param.index].openInfoWindow(markerInfoWin);
+					ME.markers[param.index].addr = v;
+					ME.fixInfoWindow();
+					ME.stopSpinner();
+					delete cookie;
+				};
+			var ow = function(){
+					ME.stopTracking();
+					if(ME.markers[param.index].addr == undefined){
+						ME.getLocationFromPoint(param.point, callback);
+					} else {
+							callback(ME.markers[param.index].addr);
+						}
+				};
+			ME.markers[param.index].removeEventListener("click", ow);
+			ME.markers[param.index].addEventListener("click", ow);
 			return ME.markers[param.index];
 		},
 	
@@ -1379,7 +1572,8 @@ var LarrymapsAssistant = Class.create({
 			}else{
 				this.trackMeTimer = setInterval(this._trackMe, 1000);
 			}
-			this.cmdMenuModel.items[0].iconPath = "images/GPS-on.png";
+			// 启用GPS，按钮变为橙色，意为等待中
+			this.cmdMenuModel.items[0].iconPath = "images/GPS-wait.png";
 			this.controller.modelChanged(this.cmdMenuModel);
 		},
 
@@ -1388,14 +1582,19 @@ var LarrymapsAssistant = Class.create({
 				return;
 			clearInterval(this.trackMeTimer);
 			this.trackMeTimer = undefined;
+			var dStyle = "display: none;-webkit-transform: rotate(0deg);";
+			ME.controller.get("director").setStyle(dStyle);
 			ME.GPS.stop();
+			// GPS停止，按钮变为灰色
 			this.cmdMenuModel.items[0].iconPath = "images/GPS-off.png";
 			this.controller.modelChanged(this.cmdMenuModel);
+			// 恢复启用提示
+			this.showGpsErrTips = true;
 			this.speed = 0;
 			if(opts && opts == "silent")
 				return;
 			this.showBox("貌似你已经停止使用GPS定位!!!!","好吧,信不信由你,反正我是信了");
-			this.closeBox(2000);
+			this.closeBox(1000);
 		},
 
 	setMapType: function(mapType){
@@ -1470,7 +1669,7 @@ var LarrymapsAssistant = Class.create({
 			// 保存地图类型，下次启动地图时使用
 			ME.larryCookie.updateLastViewMapType(mapType);
 			ME.larryCookie.updateLastViewPoint({lat: ME.mapLat, lon: ME.mapLon, level: ME.mapZoomLevel});
-			ME.updateTopRightBox();
+			ME.updateBottomLine();
 			if(baidu_MAP_TYPE != BMAP_PERSPECTIVE_MAP){
 					var hide_f = function(){
 							ME.closeBox();
@@ -1486,43 +1685,166 @@ var LarrymapsAssistant = Class.create({
 			sb.mojo.blur();
 			sb.removeClassName("focus");
 			sb.addClassName("blur");
-			sbi.removeClassName("tapable");
+			sbi.removeClassName("command");
+			sbi.removeClassName("search");
 			sbi.addClassName("graydown");
 			ME.searchBarFocused = false;
+			if(ME.fqsDrawerModel.open){
+				var opacityOfQSC = 10;
+				var f = function(){
+						if(opacityOfQSC == 0){
+							if(_timer){
+								clearInterval(_timer);
+								_timer = undefined;
+							}
+						}
+						ME.controller.get("quickSearchDrawerContainer").style.opacity = opacityOfQSC / 10;
+						opacityOfQSC--;
+					};
+				var _timer = setInterval(f, 80);
+				ME.controller.get("fqsDrawer").mojo.toggleState();
+			}
 		},
 
 	focusSearchBar: function(){
 			var sb = ME.controller.get("searchBar");
 			var sbi = ME.controller.get("searchBarGoIcon");
 			sbi.removeClassName("graydown");
-			sbi.addClassName("tapable");
+			if(sb.mojo.getValue().indexOf(".") == 0 || sb.mojo.getValue().indexOf("Go") == 0){
+				sbi.removeClassName("search");
+				sbi.addClassName("command");	
+			} else {
+				sbi.removeClassName("command");
+				sbi.addClassName("search");
+			}
 			sb.removeClassName("blur");
 			sb.addClassName("focus");
 			ME.searchBarFocused = true;
+			if(ME.mapReady && ME.controller.get("searchBar").mojo.getValue() == '' && ! ME.fqsDrawerModel.open){
+				var opacityOfQSC = 0;
+				var f = function(){
+						if(opacityOfQSC == 10){
+							if(_timer){
+								clearInterval(_timer);
+								_timer = undefined;
+							}
+						}
+						ME.controller.get("quickSearchDrawerContainer").style.opacity = opacityOfQSC / 10;
+						opacityOfQSC++;
+					};
+				var _timer = setInterval(f, 20);
+				ME.controller.get("fqsDrawer").mojo.toggleState();
+			}
 		},
 
-	updateTopRightBox: function(content){
+	updateBottomLine: function(content){
 			var strHTML;
 			if(! ME.larryCookie)
 				ME.larryCookie = new larryCookie();
 			if(ME.larryCookie.speedUnit == "kmph"){
-				var speed = parseInt(ME.speed * 3.6) + "km/h";
+				var speed = (ME.speed * 3.6).toFixed(1) + "km/h";
 			}else{ // 其它情况用m/s, COOKIE值应为 'mps'
-					var speed = parseFloat(ME.speed).toFixed(1) + "m/s";
+					var speed = parseFloat(ME.speed).toFixed(2) + "m/s";
 				}
 			if(! content)
-				strHTML = parseFloat(ME.mapLat).toFixed(6) + "<br>" + parseFloat(ME.mapLon).toFixed(6) + "<br>" + ME.mapZoomLevel + "z/ " + speed;
+				strHTML = parseFloat(ME.mapLat).toFixed(6) + "<br>" + parseFloat(ME.mapLon).toFixed(6) + "<br>[" + ME.mapZoomLevel + "] " + speed;
 			else
-				strHTML = content;
+				strHTML = content + "";
+			strHTML = strHTML.replace(/[<]br[>]/g, ",");
 			ME.controller.get("rcontent").innerHTML = strHTML;
 		},
 
 	handleDocumentKeyUp:function(evt){
 			if(Mojo.Char.isEnterKey(evt.keyCode)){
-					ME.blurSearchBar();
 					ME.startToSearch();
-				}else{
-					}
+				}else if(! ME.searchBarFocused){
+						var generateURLobj = function(maptype){
+								var pm = pm || {};
+								pm.staticMapURL = "http://maps.googleapis.com/maps/api/staticmap?" + 
+									"center=" + ME.mapLat + "," + ME.mapLon +
+									"&zoom=" + ((ME.mapZoomLevel-1)>0 ? (ME.mapZoomLevel-1) : 1) +
+									"&size=" + ME.w + "x" + ME.h +
+									"&language=zn_CN" +
+									"&sensor=false" +
+									"&markers=color:green|label:X|" + ME.mapLat + "," + ME.mapLon +
+									"&maptype=" + maptype;
+								pm.winHeight = ME.h;
+								pm.winWidth = ME.w;
+								return pm;
+							};
+						if(evt.keyCode == Mojo.Char.h){
+								ME.viewGoogleStaticMap(generateURLobj("hybrid"));
+								return;
+							}
+						if(evt.keyCode == Mojo.Char.t){
+								ME.viewGoogleStaticMap(generateURLobj("terrain"));
+								return;
+							}
+						if(evt.keyCode == Mojo.Char.q){ // 按键'q'放大一级
+								ME.mapGoto({'zoom': ME.mapZoomLevel + 1});
+								return;
+							}
+						if(evt.keyCode == Mojo.Char.e){ // 按键'e'缩小一级
+								ME.mapGoto({'zoom': ME.mapZoomLevel - 1});
+								return;
+							}
+						if(evt.keyCode == Mojo.Char.s || evt.keyCode == Mojo.Char.w || evt.keyCode == Mojo.Char.a || evt.keyCode == Mojo.Char.d){
+								ME.stopTracking('silent');
+								var panning_var;
+								panning_var = 0.0005 * Math.pow(2, (ME.maxZoom - ME.mapZoomLevel));
+								// 按键'w','s','a','d'分别对应地图的上移，下移，左移，右移
+								if(evt.keyCode == Mojo.Char.s){
+										ME.mapLat = (parseFloat(ME.mapLat) - panning_var).toFixed(6);
+										ME.mapGoto({'lat': ME.mapLat, 'lon': ME.mapLon});
+									}
+								if(evt.keyCode == Mojo.Char.w){
+										ME.mapLat = (parseFloat(ME.mapLat) + panning_var).toFixed(6);
+										ME.mapGoto({'lat': ME.mapLat, 'lon': ME.mapLon});
+									}
+								if(evt.keyCode == Mojo.Char.a){
+										ME.mapLon = (parseFloat(ME.mapLon) - panning_var).toFixed(6);
+										ME.mapGoto({'lat': ME.mapLat, 'lon': ME.mapLon});
+									}
+								if(evt.keyCode == Mojo.Char.d){
+										ME.mapLon = (parseFloat(ME.mapLon) + panning_var).toFixed(6);
+										ME.mapGoto({'lat': ME.mapLat, 'lon': ME.mapLon});
+									}
+							}else{
+									return;
+								}
+					} else if(ME.searchBarFocused){
+							if(ME.controller.get("searchBar").mojo.getValue() == ''){
+								if(! ME.fqsDrawerModel.open){
+									ME.controller.get("fqsDrawer").mojo.toggleState();
+									var opacityOfQSC = 0;
+									var f = function(){
+											if(opacityOfQSC == 10){
+												if(_timer){
+													clearInterval(_timer);
+													_timer = undefined;
+												}
+											}
+											ME.controller.get("quickSearchDrawerContainer").style.opacity = opacityOfQSC / 10;
+											opacityOfQSC++;
+										};
+									var _timer = setInterval(f, 20);
+								}
+							}else if(ME.fqsDrawerModel.open){
+									ME.controller.get("fqsDrawer").mojo.toggleState();
+									var opacityOfQSC = 10;
+									var f = function(){
+											if(opacityOfQSC == 0){
+												if(_timer){
+													clearInterval(_timer);
+													_timer = undefined;
+												}
+											}
+											ME.controller.get("quickSearchDrawerContainer").style.opacity = opacityOfQSC / 10;
+											opacityOfQSC--;
+										};
+									var _timer = setInterval(f, 80);
+								}
+						}
 		},
 
 	handleGestureStart: function(evt){
@@ -1588,8 +1910,10 @@ var LarrymapsAssistant = Class.create({
 					if(ME.inGesture)
 						return;
 					// 实时反映拖动效果
-					var style = "left:" + (evt.move.x - ME.gblDraggingEventXY.x + (0 - (ME.w/2))) + "px;";
-					style = style + "top:" + (evt.move.y - ME.gblDraggingEventXY.y + (0 - (ME.h/2))) + "px;";
+					//var style = "left:" + (evt.move.x - ME.gblDraggingEventXY.x + (0 - (ME.w/2))) + "px;";
+					//style = style + "top:" + (evt.move.y - ME.gblDraggingEventXY.y + (0 - (ME.h/2))) + "px;";
+					var style = "left:" + (evt.move.x - ME.gblDraggingEventXY.x) + "px;";
+					style = style + "top:" + (evt.move.y - ME.gblDraggingEventXY.y) + "px;";
 					ME.controller.get("map").setStyle(style);
 					if(ME._dragTimer){
 							// 如果运行到这里,说明dragging还在继续
@@ -1619,7 +1943,8 @@ var LarrymapsAssistant = Class.create({
 							//ERROR("-----Drag end-----move x,y: " + evt.move.x + "," + evt.move.y);
 							// 不再相信DragEnd
 							// 恢复地图原来位置(0,0)
-							var style = "top:" + (0 - (ME.h/2)) + "px;left:" + (0 - (ME.w/2)) + "px;";
+							//var style = "top:" + (0 - (ME.h/2)) + "px;left:" + (0 - (ME.w/2)) + "px;";
+							var style = "top:0px;left:0px;";
 							ME.controller.get("map").setStyle(style);
 							//ERROR(style);
 							os = "offsets -> x,y: " + (evt.move.x - ME.gblDraggingEventXY.x) + "," + (evt.move.y - ME.gblDraggingEventXY.y);
@@ -1648,7 +1973,7 @@ var LarrymapsAssistant = Class.create({
 							// 实时反映缩放效果
 							var style = "-webkit-transition: -webkit-transform 0.01s ease-in;-webkit-transform:scale("+evt.scale+");";
 							ME.controller.get("map").setStyle(style);
-							ME.updateTopRightBox("Scale<br><font color='red'>" + evt.scale.toFixed(6) + "</font><br>mapZoom");
+							ME.updateBottomLine("Scale<br><font color='red'>" + evt.scale.toFixed(6) + "</font><br>mapZoom");
 							if(ME._gestureTimer){
 									// 如果运行到这里,说明GestureChange还是继续
 									// 清空这个处理DestureEnd的定时器
@@ -1695,19 +2020,21 @@ var LarrymapsAssistant = Class.create({
 				}
 		},
 
-	handleRcontentTap: function(evt){
-		if(ME.isRcontentScaled){
-				ME.controller.get("realtimeInfo").setStyle("-webkit-transform: scale(1);");
-				ME.controller.get("realtimeInfo").setStyle("left: 5px;top: 55px;opacity:0.5;");
-				ME.isRcontentScaled = false;
+	handleBcontentTap: function(evt){
+		if(ME.isBcontentScaled){
+				ME.controller.get("rcontent").setStyle("font-size: 12px; font-weight: normal;");
+				ME.isBcontentScaled = false;
 			}else{
-					ME.controller.get("realtimeInfo").setStyle("-webkit-transform: scale(1.5);");
-					ME.controller.get("realtimeInfo").setStyle("left: 20px;top: 60px;opacity:0.8;");
-					ME.isRcontentScaled = true;
+					ME.controller.get("rcontent").setStyle("font-size: 14px; font-weight: bold;");
+					ME.isBcontentScaled = true;
 				}
 		},
 
 	handlePopupMenuTap: function(cmd){
+			if(typeof(cmd) == "string" && cmd.match(/^(MAP|HYB|SAT|PER)$/)){
+				var maptype = cmd;
+				cmd = "changeMapType";
+			}
 			switch(cmd){
 			case "showPanel":
 				this.showHidePanel();	
@@ -1716,14 +2043,25 @@ var LarrymapsAssistant = Class.create({
 				this.showHideTraffic();	
 				break;
 			case "changeMapType":
-				this.popupSetMapType(this);
+				this.setMapType(maptype);
 				break;
 			case "shareLocation":
-				this.prepareEmailMsg({'lat': ME.mapLat, 'lon': ME.mapLon, 'zoom': ME.mapZoomLevel});
+				this.prepareEmailMsg({'fake': true, 'lat': ME.mapLat, 'lon': ME.mapLon, 'zoom': ME.mapZoomLevel});
 				break;
-			case "getCenterLocation":
-				this.getLocationFromPoint(ME.map.getCenter());
-				this.showBox("正在查询地图中心点地理...", "请稍候");
+			case "getDistance":
+				if(! this.inMeasure){
+					this.inMeasure = true;
+					this.showBox("进入测距模式...", "后退手势退出");
+					this.hideMask();
+					this.__tmpSearchKeyword = ME.controller.get("searchBar").mojo.getValue();
+					this.controller.get("searchBar").mojo.setValue("请点击地图开始测距(后退手势退出)!");
+					this.closeBox();
+				} else {
+					this.controller.get("searchBar").mojo.setValue(ME.__tmpSearchKeyword);
+					this.inMeasuring = false;
+					this.inMeasure = false;
+					this.__distUtil.cancelMeasuring();
+				}
 				break;
 			}
 		},
@@ -1783,7 +2121,7 @@ var LarrymapsAssistant = Class.create({
 			if(ME.inDrag || ME.inGesture)
 				return;
 			ME.showMask();
-			var style = "display: block;-webkit-transform: scale(1);top:" + (pos.y - 16) + "px;left:" + (pos.x - 16) + "px;";
+			var style = "display: block;-webkit-transform: scale(1.2);top:" + (pos.y - 16) + "px;left:" + (pos.x - 16) + "px;";
 			ME.controller.get("emailButton").setStyle(style);
 			var posTrans = pos;
 			ME._f = function(){
@@ -1792,7 +2130,7 @@ var LarrymapsAssistant = Class.create({
 			ME.controller.listen(
 					ME.controller.get("emailButton"),
 					Mojo.Event.tap,
-					ME._f.bindAsEventListener(ME)
+					ME._f.bind(ME)
 				);
 		},
 
@@ -1801,7 +2139,8 @@ var LarrymapsAssistant = Class.create({
 				return;
 			ME.hideEmailButton();
 			ME.showBox("正在获取地理信息...", "请稍等");
-			var point;
+			var point,poi;
+			poi = {};
 			var zoom;
 			if(pos.lat && pos.lon)
 				point = new BMap.Point(pos.lon, pos.lat);
@@ -1816,10 +2155,19 @@ var LarrymapsAssistant = Class.create({
 				ME.larryCookie = new larryCookie();
 			if(ME.larryCookie.privateOffset.enabled){
 					// 处于调整偏移量状态时,不会执行到这里
-					point.lat = (parseFloat(point.lat) - parseFloat(ME.larryCookie.privateOffset.lat)).toFixed(6);
-					point.lon = (parseFloat(point.lng) - parseFloat(ME.larryCookie.privateOffset.lon)).toFixed(6);
-				}
-			var msg = "<br>坐标信息: " + point.lat + "," + point.lng + "<br>";
+					// pos.fake: true -- 我们是直接调用此函数,而此时lat,lon是GPS坐标。因此不能再加减偏移量
+					if(pos.fake != true){
+						poi.lat = (parseFloat(point.lat) - parseFloat(ME.larryCookie.privateOffset.lat)).toFixed(6);
+						poi.lon = (parseFloat(point.lng) - parseFloat(ME.larryCookie.privateOffset.lon)).toFixed(6);
+					} else {
+							poi.lat = pos.lat;
+							poi.lon = pos.lon;
+						}
+				} else {
+						poi.lat = point.lat;
+						poi.lon = point.lng;
+					}
+			var msg = "<br>坐标信息: " + poi.lat + "," + poi.lon + "<br>";
 			
 			msg = msg + "放大级别: " + zoom + "<br>";
 			var mt = function(arg){
@@ -1842,28 +2190,20 @@ var LarrymapsAssistant = Class.create({
 			msg = msg + "地图类型: " + mt(ME.gblMapType) + "<br>";
 			msg = msg + "时间: " + ME.getDateTime() + "<br>";
 			var link =  "larrymaps://" + 
-						"lat=" + point.lat + 
-						"&lon=" + point.lng + 
+						"lat=" + poi.lat + 
+						"&lon=" + poi.lon + 
 						"&z=" + zoom + 
 						"&t=" + ME.gblMapType + 
 						"&offsetON=" + ME.larryCookie.privateOffset.enabled + 
 						"&oslat=" + ME.larryCookie.privateOffset.lat +
 						"&oslon=" + ME.larryCookie.privateOffset.lon;
-			var b2g = function(){
-				var mt=ME.gblMapType;
-				switch(mt){
-					case "MAP": return 'roadmap';break;
-					case "HYB": return 'hybrid';break;
-					case "SAT": return 'satellite';break;
-					case "PER": return 'terrain';break;}
-				};
 			var link_google = "<a href='http://maps.googleapis.com/maps/api/staticmap?" + 
-						"center=" + point.lat + "," + point.lng +
-						"&zoom=" + zoom +
+						"center=" + poi.lat + "," + poi.lon +
+						"&zoom=" + (zoom - 1 ? zoom - 1 : 1) +
 						"&size=320x400" +
 						"&language=zh_CN" + 
 						"&sensor=false" + 
-						"&markers=color:blue|label:S|" + point.lat + "," + point.lng +
+						"&markers=color:blue|label:X|" + poi.lat + "," + poi.lon +
 						"&maptype=" + 
 						// 转换为googlemaps能识别的地图标识
 						(function(){
@@ -1886,7 +2226,7 @@ var LarrymapsAssistant = Class.create({
 					ME.stopSpinner();
 					ME.closeBox();
 				};
-			ME.getLocationFromPoint(point, send);
+			ME.getLocationFromPoint(new BMap.Point(poi.lon, poi.lat), send);
 		},
 	
 	hideEmailButton: function(){
@@ -1900,51 +2240,14 @@ var LarrymapsAssistant = Class.create({
 			ME.controller.stopListening(
 					ME.controller.get("emailButton"),
 					Mojo.Event.tap,
-					ME._f.bindAsEventListener(ME)
+					ME._f.bind(ME)
 				);
 			ME._f = undefined;
 		},
 
-	handleRcontentHold: function(evt){
+	handleBcontentHold: function(evt){
 			// 定义有x,y使电邮图标显示到指定位置，定义lat,lon使发送信息为指定的，而不是x,y位置的
 			ME.showEmailButton({'x': evt.down.x, 'y': evt.down.y, 'lat': ME.mapLat, 'lon': ME.mapLon});
-		},
-
-	popupSetMapType: function(T){
-		var items = [
-						{label: "街道地图", command: "MAP"},
-						{label: "卫星路网地图", command: "HYB"},
-						{label: "卫星地图", command: "SAT"},
-						{label: "透视地图", command: "PER"}
-					];
-		var index = 0;
-		switch(ME.gblMapType){
-			case "MAP":
-				index = 0;
-				break;
-			case "HYB":
-				index = 1;
-				break;
-			case "SAT":
-				index = 2;
-				break;
-			case "PER":
-				index = 3;
-				break;
-			default:
-				index = 0;
-				break;
-			}
-		items[index].iconPath = "images/palm-default/popup-item-checkmark.png";
-		T.controller.popupSubmenu({
-					onChoose: T.HandleChangeMapTypePopupMenuTap.bind(T),
-					placeNear: event.target,
-					items:items
-					});
-		},
-
-	HandleChangeMapTypePopupMenuTap: function(cmd){
-			ME.setMapType(cmd);
 		},
 
 	emailStuff: function(msg, style){
@@ -2000,6 +2303,90 @@ var LarrymapsAssistant = Class.create({
 					}
 				}
 			);
+		},
+
+	autoUpdateBaiduMapGeoOffsets: function(obj){ // obj:
+												 // {
+												 // lat: float, 
+												 // lon: float, 
+												 // from: number[0~3], 
+												 // to: number[2~4],
+												 // callback: function  // 传递参数:
+												 // 					// {"error":0,"x":"MTEwLjI5NjM5ODIwMTg=","y":"MjUuMjE3MDk0OTk4MjE4"}
+												 // 					// 注： x,y 可用于 new BMap.Point(x, y)
+												 // }
+			if(! obj || ! (obj.lat && obj.lon))
+				return;
+			var from = obj.from ? obj.from : 0;
+			var to = obj.to ? obj.to : 4;
+			var adjGeoURL = "http://api.map.baidu.com/ag/coord/convert";
+			var adjGeoURLParams = {
+					"from": from,
+					"to": to,
+					"x": obj.lon,
+					"y": obj.lat
+				};
+			if(obj.callback){
+				var f = obj.callback;
+			} else {
+					var f = function(response){
+							var rspJSON = response.responseText.evalJSON(true);
+							if(! rspJSON || rspJSON.error != 0){
+								f_fail();
+								return;
+							}
+							// 转换坐标
+							var point = new BMap.Point(rspJSON.x, rspJSON.y);
+							var offsets = {};
+							offsets.lat = (parseFloat(point.lat) - parseFloat(adjGeoURLParams.y)).toFixed(6);
+							offsets.lon = (parseFloat(point.lng) - parseFloat(adjGeoURLParams.x)).toFixed(6);
+
+							var cookie = new larryCookie();
+							if(!(isNaN(offsets.lat) || isNaN(offsets.lon))){
+								cookie.savePrivateOffset(offsets);
+							}
+							setTimeout(function(){
+									if(cookie)
+										delete cookie;
+								}, 2000);
+							if(AQ)
+								delete AQ;
+						};
+				}
+			var f_fail = function(){
+					Mojo.Controller.stageController.activeScene().showAlertDialog(
+							{
+								allowHTMLMessage: true,
+								title: "很遗憾",
+								message: "我们<font color='red'>不能自动更新</font>偏移量，<br>" + 
+										 "可能的原因有:<br>" +
+										 "1, 网络情况不好(下次可能正常)<br>" +
+										 "2, 百度终止提供纠偏服务<br>" +
+										 "<font color='green'>无论如何,请按下面的按钮. :-) </font>" +
+										 "<font color='blue'>要取消此提示，请到设置页面取消自动纠偏!</font>",
+								choices: [{label: $L("遗憾地返回")}]
+							}
+						);
+					if(AQ)
+						delete AQ;
+				};
+			var AQ = new Ajax.Request(
+					adjGeoURL,
+					{
+						method: "GET",
+						requestHeaders: {Accept: 'application/json'},
+						parameters: adjGeoURLParams,
+						onSuccess: f.bind(this),
+						onFailure: f_fail
+					}
+				);
+		},
+
+	dealAutoFixOffsets: function(){
+			if(! ME.autoFixOffset){
+				return;
+			}
+			ME.autoUpdateBaiduMapGeoOffsets({lat: ME.mapLat, lon: ME.mapLon});
 		},
 	
 	prepareToAdjust: function(){
@@ -2076,7 +2463,7 @@ var LarrymapsAssistant = Class.create({
 					this.larryCookie.savePrivateOffset(this.tmpOffset);
 				}else{
 						this.showBox("你<font color='red'>没有保存</font>GPS偏移量,<br>就<font color='red'>退出</font>了调整偏移状态!!!", "实在太可惜了");
-						this.closeBox(2000);
+						this.closeBox(2500);
 					}
 			setTimeout(function(){this.map.removeOverlay(this.markers[2]);}.bind(this), 1500);
 			this.controller.stopListening("adjustBall",Mojo.Event.dragStart,this.setDragStartPos.bind(this));
@@ -2089,6 +2476,8 @@ var LarrymapsAssistant = Class.create({
 			this.__downPos = {'x': evt.down.x, 'y': evt.down.y}
 		},
 	setBallPosition: function(evt){
+			// 手指在移动中，禁止自动更新中心点坐标到GPS坐标
+			this.inAdjusting = true;
 			this.__movePos = {'x': evt.move.x, 'y': evt.move.y};
 			this.__ballPosNew = {	'left':this.__ballPos.left + (this.__movePos.x - this.__downPos.x) ,
 									'top': this.__ballPos.top + (this.__movePos.y - this.__downPos.y)
@@ -2098,8 +2487,15 @@ var LarrymapsAssistant = Class.create({
 			this.controller.get("offsets").innerHTML = "(缩放可用)<br>(完成后请从程序菜单保存)<br>" + style;
 			// 我不相信 DragEnd 事件, 所以用自己的办法做DragEnd要做的事:
 			// 保存这些改变的量
-			// 事情是这样的： 如果500毫秒内没有dragging事件，我们认为是时候dragEnd了.  ;-)
+			// 事情是这样的： 如果300毫秒内没有dragging事件，我们认为是时候dragEnd了.  ;-)
 			var dragendFunc = function(){
+					// 手指不拖动了，我们重新自动更新中心点坐标到GPS坐标
+					// 延长1.5秒，用处是防止GPS在1秒的交叉时间内变换新坐标
+					var THIS = this;
+					setTimeout(function(){
+							THIS.inAdjusting = false;
+							}, 1500
+						);
 					this.__ballPos = {'top': this.__ballPosNew.top, 'left': this.__ballPosNew.left};
 					// 如果处于自动定位状态,禁用动画移动地图.
 					// 如果不在GPS定位状态,启用动画,这样视觉效果会好些.
@@ -2110,8 +2506,10 @@ var LarrymapsAssistant = Class.create({
 					this.map.panTo(
 						this.map.pixelToPoint(
 							new BMap.Pixel(
-								this.__ballPos.left + ((ME.w + 46) / 2), 
-								this.__ballPos.top + ((ME.h + 46) / 2)
+								// this.__ballPos.left + ((ME.w + 46) / 2), 
+								// this.__ballPos.top + ((ME.h + 46) / 2)
+								this.__ballPos.left + (46 / 2),
+								this.__ballPos.top + (46 / 2)
 							)
 						), 
 						panOpt);
@@ -2147,9 +2545,83 @@ var LarrymapsAssistant = Class.create({
 					clearTimeout(this.__catchDragEndTimer);
 					this.__catchDragEndTimer = undefined;
 				}
-			this.__catchDragEndTimer = setTimeout(dragendFunc, 500);
+			this.__catchDragEndTimer = setTimeout(dragendFunc, 300);
 		},
-		
+	
+	viewGoogleStaticMap: function(params){
+		if(! params || ! params.staticMapURL)
+			return;
+		var stageName = "googleStaticMapStage";
+		var sceneName = "googlestaticmap";
+		var appController = Mojo.Controller.getAppController();
+		params.winHeight = params.winHeight ? params.winHeight : 320;
+		params.winWidth = params.winWidth ? params.winWidth : 400;
+		GSMStageController = appController.getStageController(stageName);
+		if(GSMStageController){
+			GSMStageController.swapScene(sceneName, params);
+			GSMStageController.activate();
+		}else{
+			appController.createStageWithCallback(
+					{
+						name: stageName,
+						lightweight: true
+					},
+					function(sc){
+						sc.pushScene(sceneName, params);
+					}
+				);
+		}
+	},
+
+	calcDirectionAlpha: function(pointA, pointB){
+		if(! ((pointA instanceof BMap.Point) && (pointB instanceof BMap.Point)))
+			return null;
+		var pA = ME.map.pointToPixel(pointA);
+		var pB = ME.map.pointToPixel(pointB);
+		var x = pB.x - pA.x;
+		var y = pB.y - pA.y;
+		var z = Math.sqrt(Math.pow(x, 2) + Math.pow(y, 2));
+		var r;
+		if(x > 0){
+			if(y < 0){
+				r = Math.asin(x/z);
+			}else if (y > 0){
+				r = Math.PI - Math.asin(x/z);
+			} else {
+				r = Math.PI / 2;
+			}
+		} else if (x < 0){
+			if(y > 0){
+				r = Math.PI + Math.asin(-x/z);
+			} else if(y < 0){
+				r = (2 * Math.PI) - Math.asin(-x/z);
+			} else {
+				r = Math.PI * (3/2);
+			}
+		} else {
+			if(y < 0){
+				r = 0;
+			} else if(y > 0){
+				r = Math.PI;
+			} else {
+				r = null;
+			}
+		}
+		return r;
+	},
+
+	// Update the flag of direction
+	updateDirection: function(pA, pB){
+		var alpha = ME.calcDirectionAlpha(pA, pB);
+		if(alpha != null){
+			var dStyle = "display: block;-webkit-transform: rotate("+((alpha/(Math.PI * 2)) * 360)+"deg);";
+		} else {
+			var dStyle = "display: none;-webkit-transform: rotate(0deg);";
+		}
+		ME.controller.get("director").setStyle(dStyle);
+		//ME.updateBottomLine((alpha/(Math.PI * 2)) * 360);
+	},
+
 	handleCommand: function(evt){
 		if (evt.type == Mojo.Event.command){
 			switch(evt.command){
@@ -2200,17 +2672,63 @@ var LarrymapsAssistant = Class.create({
 							this.checkNetwork(this);
 							break;
 						}
-					var items = [
-									{label: "切换地图(" + (this.gblMapType? this.gblMapType : "Loading..") + ")", command: "changeMapType", iconPath: "images/palm-default/menu-icon-forward.png"},
-									{label: "查中心点地理", command: "getCenterLocation", iconPath: "images/palm-default/search-main.png"},
-									{label: "分享当前位置", command: "shareLocation", iconPath: "images/palm-default/msg-send.png"},
-									{label: "交通路况", command: "traffic"},
-									{label: "数据面板", command: "showPanel"}
+					var itemsMaptype = [
+									{label: "街道地图", command: "MAP"},
+									{label: "卫星路网", command: "HYB"},
+									{label: "卫星地图", command: "SAT"},
+									{label: "透视地图", command: "PER"}
 								];
-					if(this.trafficShowed)
-						items[3].iconPath = "images/palm-default/popup-item-checkmark.png";
-					if(this.panelShowed)
-						items[4].iconPath = "images/palm-default/popup-item-checkmark.png";
+					var indexMaptype = 0;
+					switch(ME.gblMapType){
+						case "MAP":
+							indexMaptype = 0;
+							break;
+						case "HYB":
+							indexMaptype = 1;
+							break;
+						case "SAT":
+							indexMaptype = 2;
+							break;
+						case "PER":
+							indexMaptype = 3;
+							break;
+						default:
+							indexMaptype = 0;
+							break;
+						}
+					itemsMaptype[indexMaptype].iconPath = "images/palm-default/popup-item-checkmark.png";
+					var items = [
+									{
+										label: "地图类型", 
+										items: itemsMaptype
+									
+									},
+									{label: "测距模式", command: "getDistance", iconPath: "images/ruler.png"},
+									{label: "分享位置", command: "shareLocation", iconPath: "images/send-via-email.png"},
+									{label: "交通路况", command: "traffic", iconPath: "images/traffic-icon.png"},
+									{label: "数据面板", command: "showPanel", iconPath: "images/panel-off.png"}
+								];
+					if(this.inMeasure){
+						items[1].iconPath = "images/ruler-color.png";
+						items[1].label = "退出测距模式";
+					} else {
+						items[1].iconPath = "images/ruler.png";
+						items[1].label = "测距模式";
+					}
+					if(this.trafficShowed){
+						items[3].iconPath = "images/traffic-icon-on.png";
+						items[3].label = "关闭交通路况";
+					} else {
+						items[3].iconPath = "images/traffic-icon.png";
+						items[3].label = "交通路况";
+					}
+					if(this.panelShowed){
+						items[4].iconPath = "images/panel-on.png";
+						items[4].label = "关闭数据面板";
+					} else {
+						items[4].iconPath = "images/panel-off.png";
+						items[4].label = "数据面板";
+					}
 					this.controller.popupSubmenu({
 							onChoose: this.handlePopupMenuTap.bind(this),
 							placeNear: event.target,
@@ -2224,9 +2742,10 @@ var LarrymapsAssistant = Class.create({
 		if (evt.type == Mojo.Event.back){
 				if(! ME.mapReady)
 					return;
+
 				if(this.inAdjust){
 						this.inAdjust = false;
-						this.menuModel.items[1].label = "调整偏差";
+						this.menuModel.items[1].label = "调整偏差量";
 						this.finishAdjustment();
 						evt.stop()
 						return;
@@ -2242,7 +2761,7 @@ var LarrymapsAssistant = Class.create({
 						return;
 					}
 				if(this.boxShowed){
-						ME.closeBox();
+						ME.closeBox(500);
 						evt.stop();
 						return;
 					}
@@ -2251,6 +2770,28 @@ var LarrymapsAssistant = Class.create({
 						evt.stop();
 						return;
 					}
+
+				//
+				//
+				if(ME.__distUtil){
+					if(ME.__distUtil.getLength() != 0){
+						var f = function(){
+							ME.__distUtil.deletePoint(ME.__distUtil.getLength() -1);
+							ME.___dpTimer = undefined;
+						}
+						// 如果我没有猜错的话，操作太快会卡死你的JJ.  ;-)
+						if(! ME.___dpTimer)
+							ME.___dpTimer = setTimeout(f, 300);
+						evt.stop();
+						return;
+					} else {
+							this.controller.get("searchBar").mojo.setValue(ME.__tmpSearchKeyword);
+							ME.inMeasuring = false;
+							ME.inMeasure = false;
+						}
+				}
+				//
+				//
 				ME.map.closeInfoWindow();
 				evt.stop();
 			}

@@ -36,7 +36,7 @@ body
 	-webkit-transition: opacity 1300ms linear 10ms;
 	z-index: 12;
 	font-size: 16px;
-	opacity: .99;
+	opacity: .8;
 	max-height: 285px;
 	overflow: scroll;
 	display: none;
@@ -52,7 +52,7 @@ body
 	left: 0px;
 	z-index: 11;
 	opacity: .3;
-	-webkit-transition: opacity 1000ms linear 10ms;
+	-webkit-transition: opacity 1000ms ease-in-out 10ms;
 	display: none;
 }
 
@@ -136,17 +136,17 @@ body
 	font-size: 16px;
 	border-width: 10px 25px 10px 25px;
 	-webkit-box-sizing: border-box;
-	opacity: 0.8;
+	opacity: 1;
 }
 #searchBar.blur
 {
 	-webkit-border-image: url(../images/hash.png) 10 25 10 25 stretch stretch;
-	opacity: .9;
+	opacity: 1;
 	font-weight: bold;
 }
 #searchBar.focus{
 	-webkit-border-image: url(../images/palm-default/search-box.png) 10 25 10 25 stretch stretch;
-	opacity: .95;
+	opacity: 1;
 }
 #searchBar input
 {
@@ -167,18 +167,28 @@ body
 	top: 9px;
 	height: 32px;
 	width: 32px;
-	background: url(../images/palm-default/url-go-icon.png);
+	background: url(../images/palm-default/search-icon.png);
 	z-index: 1000;
-	opacity: .1;
+	opacity: .9;
 }
-#searchBarGoIcon.tapable
+#searchBarGoIcon.search
 {
 	opacity: .9;
+	display: block;
 	z-index: 1002;
+	background: url(../images/palm-default/search-icon.png);
+}
+#searchBarGoIcon.command
+{
+	opacity: .9;
+	display: block;
+	z-index: 1002;
+	background: url(../images/palm-default/command-go-icon.png);
 }
 #searchBarGoIcon.graydown
 {
 	opacity: .1;
+	display: block;
 	z-index: 1000;
 }
 
@@ -192,31 +202,21 @@ body
 #realtimeInfo
 {
 	display: block;
-	width: 60px;
 	margin: 0px;
 	padding: 0px;
-	height: 45px;
 	position: fixed;
-	float:right;
-	padding-top: 4px;
-	top: 50px;
-	left: 5px;
+	padding-left: 48px;
+	bottom: 5px;
 	z-index: 15;
 	background: none;
-	border-width: 4px 4px 4px 4px;
-	-webkit-box-sizing: border-box;
-	-webkit-border-image: url(../images/tl-box-bg.png)  4 4 4 4 stretch stretch;
-	opacity: .5;
-	-webkit-transition: -webkit-transform 0.2s ease-out;
-	-webkit-transform: scale(1);
 }
 #realtimeInfo .rcontent
 {
 	margin: 0px;
-	font-size: 10px;
+	font-size: 12px;
 	text-align: center;
 	color: black;
-	line-height: 10px;
+	line-height: 12px;
 }
 
 #panel
@@ -224,19 +224,19 @@ body
 	position: fixed;
 	left: 0px;
 	right: 0px;
-	bottom: 40px;
+	bottom: 44px;
 	display: none;
-	max-height: 265px;
+	max-height: 280px;
 	z-index: 13;
 	background: none;
 	opacity: 0.8;
+	overflow: scroll;
 }
 
 #panelContent
 {
-	max-height: 260px;
-	overflow: scroll;
 	margin: 10px 0px 10px 0px;
+	overflow: scroll;
 }
 
 #updaterSpinner
@@ -244,7 +244,7 @@ body
 	position: absolute;
 	z-index: 8;
 	display: none;
-	opacity: .7;
+	opacity: .6;
 }
 
 #prefSpinner
@@ -354,6 +354,83 @@ a
 	display: none;
 	-webkit-transition: -webkit-transform 0.2s ease-out;
 	-webkit-transform: scale(0.1);
+}
+
+#quickSearchDrawerContainer
+{
+	position: fixed;
+	top: 30px;
+	left: 0px;
+	right: 0px;
+	border-width: 24px 24px 24px 24px;
+	margin: 0px 0px 0px 0px;
+	-webkit-box-sizing: border-box;
+	-webkit-border-image: url(../images/quick-search-drawer-container-background.png) 24 24 24 24 stretch stretch;
+	z-index: 14;
+	font-size: 16px;
+	color: #336633;
+	line-height: 36px;
+	opacity: 0
+}
+
+.quickSearchItem
+{
+	padding: 2px;
+	border-width: 4px 6px 4px 6px;
+	-webkit-box-sizing: border-box;
+	-webkit-border-image: url(../images/item-bg.png) 4 6 4 6 stretch stretch;
+	display: inline;
+	white-space: nowrap;
+	text-align: center;
+}
+
+.quickSearchItemSelected
+{
+	padding: 2px;
+	border-width: 4px 6px 4px 6px;
+	-webkit-box-sizing: border-box;
+	-webkit-border-image: url(../images/item-bg-select.png) 4 6 4 6 stretch stretch;
+	display: inline;
+	white-space: nowrap;
+	text-align: center;
+}
+
+#staticMapContainer
+{
+	padding: 0px;
+	margin: 0px;
+	position: fixed;
+	top: 0px;
+	left: 0px;
+	height: 100%;
+	width: 100%;
+	background: black;
+}
+
+#staticMapContainer#staticMap
+{
+	border: 0px;
+}
+
+#director
+{
+	position: absolute;
+	width: 46px;
+	height: 46px;
+	background: url(../images/gps-director.png) center no-repeat;
+	display: none;
+	-webkit-transform: rotate(0deg);
+	z-index: 12;
+}
+
+.palm-divider.labeled .left
+{
+	-webkit-palm-mouse-target: ignore;
+}
+
+.palm-divider.labeled .label
+{
+	text-transform: lowercase;
 }
   
 .scene-fade-top

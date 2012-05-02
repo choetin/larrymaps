@@ -202,7 +202,7 @@ var APIUpdater = Class.create({
 			delete apiInfoCookie;
 			var msg = "";
 			msg = me.cssTried ? ("更新CSS文件" + (me.cssReady ? "<font color='green'>成功! :-)</font>":"失败!! :-(</font>")) : "";
-			msg = msg + (me.jsTried ? ("更新JS文件" + (me.jsReady ? "<font color='green'>成功! :-)</font>":"失败!! :-(</font>")) : "");
+			msg = msg + (me.jsTried ? ("更新JS文件" + (me.jsReady ? "<font color='green'>成功! :-)</font><br>如果是手动更新，你可能需要重启本程序才能生效!<br>!!!注意: 我要提醒你,如果以后发现地图移动不了，不能用了，怎么办？答案是：到[设置]页面，点击[程序菜单]，更新JS!!! <br>别说我没提醒过你!":"失败!! :-(</font>")) : "");
 			if(msg != "")
 				Mojo.Controller.stageController.activeScene().showAlertDialog({
 					title: "更新状态 - Larry Maps",
