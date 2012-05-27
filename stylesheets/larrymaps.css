@@ -128,11 +128,12 @@ body
 	right: 70px;
 	height: 50px;
 	width: 100%;
-	color: #aaffaa;
+	color: white;
 	display: block;
 	z-index: 1001;
 	padding-top: 4px;
 	padding-left: 1px;
+	font-weight: bold;
 	font-size: 16px;
 	border-width: 10px 25px 10px 25px;
 	-webkit-box-sizing: border-box;
@@ -141,6 +142,12 @@ body
 #searchBar.blur
 {
 	-webkit-border-image: url(../images/hash.png) 10 25 10 25 stretch stretch;
+	opacity: 1;
+	font-weight: bold;
+}
+#searchBar.selected
+{
+	-webkit-border-image: url(../images/hash-green.png) 10 25 10 25 stretch stretch;
 	opacity: 1;
 	font-weight: bold;
 }
@@ -156,8 +163,9 @@ body
 	margin-right: -5px;
 	padding: 0px;
 	border: 0px;
-	color: #88ff88;
-	font-size: 15px;
+	color: white;
+	font-size: 16px;
+	font-weight: bold;
 }
 
 #searchBarGoIcon
@@ -230,6 +238,11 @@ body
 	z-index: 13;
 	background: none;
 	opacity: 0.8;
+	overflow: scroll;
+}
+
+#panelScroller
+{
 	overflow: scroll;
 }
 
@@ -370,7 +383,7 @@ a
 	font-size: 16px;
 	color: #336633;
 	line-height: 36px;
-	opacity: 0
+	opacity: 0;
 }
 
 .quickSearchItem
@@ -384,7 +397,7 @@ a
 	text-align: center;
 }
 
-.quickSearchItemSelected
+.quickSearchItem.selected
 {
 	padding: 2px;
 	border-width: 4px 6px 4px 6px;
@@ -393,6 +406,7 @@ a
 	display: inline;
 	white-space: nowrap;
 	text-align: center;
+	-webkit-transform: rotate(15deg);
 }
 
 #staticMapContainer
@@ -421,6 +435,55 @@ a
 	display: none;
 	-webkit-transform: rotate(0deg);
 	z-index: 12;
+}
+
+#pointOpt
+{
+	position: fixed;
+	bottom: 0px;
+	left: 0px;
+	padding: 10px;
+	display: none;
+	color: black;
+	border-width: 4px 8px 19px 37px;
+	-webkit-box-sizing: border-box;
+	font-size: 16px;
+	-webkit-border-image: url(../images/point-opt.png) 4 8 19 37 stretch stretch;
+	z-index: 11;
+	opacity: .7;
+	line-height: 20px;
+}
+
+.pointOptItem
+{
+	margin: 0px 0px 0px -30px;
+	padding: 2px;
+	border-width: 4px 6px 4px 6px;
+	-webkit-box-sizing: border-box;
+	-webkit-border-image: url(../images/item-bg.png) 4 6 4 6 stretch stretch;
+	white-space: nowrap;
+	text-align: center;
+}
+
+.pointOptItem.selected
+{
+	margin: 0px 0px 0px -30px;
+	padding: 2px;
+	border-width: 4px 6px 4px 6px;
+	-webkit-box-sizing: border-box;
+	-webkit-border-image: url(../images/item-bg-select.png) 4 6 4 6 stretch stretch;
+	white-space: nowrap;
+	text-align: center;
+	-webkit-transform: rotate(15deg);
+}
+
+.hideIt
+{
+	display: none;
+}
+.showIt
+{
+	display: block;
 }
 
 .palm-divider.labeled .left

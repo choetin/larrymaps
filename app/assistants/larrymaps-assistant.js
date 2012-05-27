@@ -13,7 +13,7 @@ var LarrymapsAssistant = Class.create({
 	initialize: function(params){
 			ME = this;
 			this.larryCookie = new larryCookie();
-			this.networkAvailable = false;
+			this.networkAvailable = true;
 			this.apiInfoDATA = undefined; // API的COOKIE实例
 			this.apiLoaded = false; // API是否已经加载
 			this.mapReady = false; // 地图是否已经就绪
@@ -45,6 +45,7 @@ var LarrymapsAssistant = Class.create({
 										 // timeout - 计算两点间的线与垂直线的角度（北方？）
 			this.gblDirectionGhost.TIMEOUT = 2;
 			this.gblDirectionGhost.timer = 0;
+			this.route = {};
 		},
 
 	setup: function(event){
@@ -191,7 +192,7 @@ var LarrymapsAssistant = Class.create({
 		this.controller.listen(
 			this.controller.sceneElement,
 			Mojo.Event.tap,
-			this.quickSearchInBounds.bind(this)
+			this.handleElementTapEvent.bind(this)
 		);
 	},
 	
@@ -217,6 +218,7 @@ var LarrymapsAssistant = Class.create({
 		if (! this.networkAvailable){
 			this.checkNetwork(this);
 		} else {
+			this.controller.get("goNoNetworkHelp").style.display = "none";
 			this.prepareMapAPI(this);
 		}
 		if(this.mapReady)
@@ -310,7 +312,7 @@ var LarrymapsAssistant = Class.create({
 			this.controller.stopListening(this.controller.get("searchBarGoIcon"), Mojo.Event.tap, this.startToSearch.bind(this));
 			this.controller.stopListening(this.controller.get("map"), Mojo.Event.hold, this.handleMapHold.bind(this));
 			this.removeInsideEleEvtObsering();
-			this.controller.stopListening(this.controller.sceneElement, Mojo.Event.tap, this.quickSearchInBounds.bind(this));
+			this.controller.stopListening(this.controller.sceneElement, Mojo.Event.tap, this.handleElementTapEvent.bind(this));
 		},
 
 	captureInsideEleEvt: function(){
@@ -409,7 +411,7 @@ var LarrymapsAssistant = Class.create({
 				};
 			
 			// Define an instance of TransitRoute.
-			// there are 5 records per page.
+			// there are 1 records per page.
 			var ff = function(rslt){
 					ME.handleTransitRouteComplete(rslt);
 					//ERROR("@@@@@ transitRoute ready:" + rslt);
@@ -421,7 +423,7 @@ var LarrymapsAssistant = Class.create({
 					selectFirstResult: true,
 					panel: "panelContent"
 				},
-				pageCapacity: 4,
+				pageCapacity: 1,
 				onSearchComplete: ff,
 				onInfoHtmlSet: refreshOurCuteVar
 			});
@@ -509,8 +511,10 @@ var LarrymapsAssistant = Class.create({
 			}
 		},
 
-	quickSearchInBounds: function(evt){
-			if(evt.target && evt.target.className == "quickSearchItem"){
+	handleElementTapEvent: function(evt){
+		try{	
+			if(evt.target && evt.target.className.indexOf("quickSearchItem") != -1){
+				ME.blurSearchBar();
 				var bounds = new BMap.Bounds(
 						ME.map.pixelToPoint(new BMap.Pixel(0, ME.h)),
 						ME.map.pixelToPoint(new BMap.Pixel(ME.w, 0))
@@ -518,7 +522,34 @@ var LarrymapsAssistant = Class.create({
 				ME.startSpinner();
 				ME.stopTracking('silent');
 				ME.localSearch.searchInBounds(evt.target.innerHTML.trim(), bounds);
-			}
+			} else if(evt.target.className.indexOf("pointOptItem") != -1){
+					ME.blurSearchBar();
+					var point = ME.map.pixelToPoint(new BMap.Pixel(ME.posPointHold.x, ME.posPointHold.y));
+					if(evt.target.innerHTML == "设为起点"){
+						ME.route.start = point;
+						ME.hidePointOptMenu();
+					}
+					if(evt.target.innerHTML == "设为终点"){
+						ME.route.end = point;
+						ME.hidePointOptMenu();
+					}
+					if(ME.route.start && ME.route.end){
+						ME.transitRoute.search(ME.route.start, ME.route.end);
+						ME.startSpinner();
+						ME.stopTracking();
+						ME.route.start = undefined;
+						ME.route.end = undefined;
+						return;
+					}
+					if(evt.target.innerHTML == "分享位置"){
+						ME.prepareEmailMsg({'fake': true, 'lat': point.lat, 'lon': point.lng, 'zoom': ME.mapZoomLevel});
+						ME.hidePointOptMenu();
+						return;
+					}
+				}
+			} catch(e){
+					ERROR("@@@@@ Got errors in larrymaps#handleElementTapEvent! ");
+				}
 		},
 
 	fixInfoWindow: function(){
@@ -1110,7 +1141,17 @@ var LarrymapsAssistant = Class.create({
 						}
 						ME.__distUtil.addPoint(ME.map.pixelToPoint(new BMap.Pixel(evt.down.x, evt.down.y)));
 						return;
-					}
+					} else {
+							if(ME.__topBox__){
+								ME.controller.get("topBox").removeClassName("showIt");
+								ME.controller.get("topBox").addClassName("hideIt");
+								ME.__topBox__ = false;
+							}else{
+								ME.controller.get("topBox").removeClassName("hideIt");
+								ME.controller.get("topBox").addClassName("showIt");
+								ME.__topBox__ = true;
+							}
+						}
 				// test the direction controller:
 				// ME.updateDirection(ME.map.getCenter(), ME.map.pixelToPoint(new BMap.Pixel(evt.down.x, evt.down.y)));
 				}
@@ -1123,7 +1164,8 @@ var LarrymapsAssistant = Class.create({
 			if(! ME.searchBarFocused){
 				if(ME.inDrag || ME.inGesture || ME.inMeasure)
 					return;
-				ME.showEmailButton({'x': evt.down.x, 'y': evt.down.y});
+				// ME.showEmailButton({'x': evt.down.x, 'y': evt.down.y});
+				ME.showPointOptions((ME.posPointHold = {'x': evt.down.x, 'y': evt.down.y}));
 			}else{
 					ME.blurSearchBar();
 				}
@@ -1735,6 +1777,7 @@ var LarrymapsAssistant = Class.create({
 				var _timer = setInterval(f, 20);
 				ME.controller.get("fqsDrawer").mojo.toggleState();
 			}
+			ME.hidePointOptMenu();
 		},
 
 	updateBottomLine: function(content){
@@ -2276,6 +2319,7 @@ var LarrymapsAssistant = Class.create({
 		},
 
 	addRedirectHandler: function(){
+		try{
 			this.controller.serviceRequest
 			(
 				"palm://com.palm.applicationManager",
@@ -2289,7 +2333,10 @@ var LarrymapsAssistant = Class.create({
 					}
 				}
 			);
-		},
+		} catch(e) {
+				ERROR("@@@@@ Got errors in larrymaps#addRedirectHandler! ");
+			}
+	},
 
 	removeRedirectHandler: function(){
 			this.controller.serviceRequest
@@ -2622,6 +2669,19 @@ var LarrymapsAssistant = Class.create({
 		//ME.updateBottomLine((alpha/(Math.PI * 2)) * 360);
 	},
 
+	showPointOptions: function(pos){
+		if(! pos)
+			return;
+		var style = "display: block;"
+		style += "bottom: " + (ME.h - pos.y) + "px;";
+		style += "left: " + (pos.x - 23) + "px;";
+		ME.controller.get("pointOpt").setStyle(style);
+	},
+
+	hidePointOptMenu: function(){
+		ME.controller.get("pointOpt").setStyle("display: none;");	
+	},
+
 	handleCommand: function(evt){
 		if (evt.type == Mojo.Event.command){
 			switch(evt.command){
@@ -2742,7 +2802,7 @@ var LarrymapsAssistant = Class.create({
 		if (evt.type == Mojo.Event.back){
 				if(! ME.mapReady)
 					return;
-
+				this.hidePointOptMenu();
 				if(this.inAdjust){
 						this.inAdjust = false;
 						this.menuModel.items[1].label = "调整偏差量";
